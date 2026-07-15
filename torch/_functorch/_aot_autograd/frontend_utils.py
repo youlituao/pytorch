@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from typing import Any, cast, TYPE_CHECKING
 
 import torch
@@ -85,12 +85,7 @@ def process_inputs(
                         )
             flat_args[i] = resolved_arg
 
-    fake_mode_ctx = (
-        nullcontext()
-        if CppFakeTensorMode._get_active_cpp_fake_tensor_mode() is not None
-        else fake_mode
-    )
-    with fake_mode_ctx:
+    with fake_mode:
 
         def convert(idx: int, x: Any) -> Any:
             nonlocal ignore_shape_env

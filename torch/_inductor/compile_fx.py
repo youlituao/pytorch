@@ -1347,7 +1347,6 @@ class _InProcessFxCompile(FxCompile):
         with (
             _WaitCounter("pytorch.wait_counter.actual_codegen_and_compile").guard(),
             dynamo_utils.preserve_rng_state(),
-            contextlib.ExitStack() as cpp_fake_stack,
         ):
             if (sleep_sec := config.sleep_sec_TESTING_ONLY) is not None:
                 import time
@@ -1415,11 +1414,6 @@ class _InProcessFxCompile(FxCompile):
             # .view() call.
             view_to_reshape(gm)
 
-            prev_cpp_fake_mode = (
-                CppFakeTensorMode._get_active_cpp_fake_tensor_mode()
-                if torch._dynamo.config.use_cpp_fake_tensor
-                else None
-            )
             with dynamo_timed(
                 "additional_fake_tensor_prop", log_pt2_compile_event=True
             ):
@@ -1429,11 +1423,6 @@ class _InProcessFxCompile(FxCompile):
                 # graph.
                 with torch.no_grad():
                     fake_mode = fake_tensor_prop(gm, example_inputs)
-
-            if torch._dynamo.config.use_cpp_fake_tensor:
-                cpp_fake_mode = CppFakeTensorMode._get_active_cpp_fake_tensor_mode()
-                if cpp_fake_mode is not None and cpp_fake_mode is not prev_cpp_fake_mode:
-                    cpp_fake_stack.callback(torch._C._exit_fake_tensor_mode)
 
             _recursive_record_original_output_strides(gm)
 

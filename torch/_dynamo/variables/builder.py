@@ -73,7 +73,6 @@ from torch._ops import HigherOrderOperator, OpOverload, OpOverloadPacket
 from torch._subclasses.fake_tensor import (
     maybe_get_fake_mode,
     is_fake_tensor,
-    CppFakeTensorMode,
     FakeTensor,
     FakeTensorMode,
     is_fake,
@@ -4893,30 +4892,13 @@ def _wrap_to_fake_tensor_and_record_impl(
         with enable_python_dispatcher():
             if tx.fake_mode is None:
                 raise AssertionError("tx.fake_mode must not be None")
-            if (
-                config.use_cpp_fake_tensor
-                and CppFakeTensorMode._get_active_cpp_fake_tensor_mode() is not None
-            ):
-                log.debug(
-                    "wrap_to_fake (C++ mode) %s %s",
-                    source.name if source else "(none)",
-                    tuple(e.shape),
+            fake_e = wrap_fake_exception(
+                lambda: tx.fake_mode.from_tensor(
+                    e,  # type: ignore[arg-type]
+                    source=source,
+                    symbolic_context=symbolic_context,
                 )
-                fake_e = wrap_fake_exception(
-                    lambda: tx.cpp_fake_mode.from_tensor(
-                        e,
-                        source=source,
-                        symbolic_context=symbolic_context,
-                    )
-                )
-            else:
-                fake_e = wrap_fake_exception(
-                    lambda: tx.fake_mode.from_tensor(
-                        e,  # type: ignore[arg-type]
-                        source=source,
-                        symbolic_context=symbolic_context,
-                    )
-                )
+            )
         if tensor_spec is not None:
             _wire_tensor_spec_dims(tensor_spec, fake_e)
         if (

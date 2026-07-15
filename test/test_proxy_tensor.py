@@ -30,16 +30,13 @@ from torch.fx.experimental.proxy_tensor import (
     ProxyTorchDispatchMode,
     PythonKeyTracer,
 )
-from torch.testing._internal.optests.make_fx import (
-    MAKE_FX_CPP_FAKE_TENSOR,
-    make_fx_cpp_fake,
-)
+from torch.testing._internal.optests.make_fx import make_fx_cpp_fake
 
 
-# When MAKE_FX_CPP_FAKE_TENSOR=1 this whole suite exercises the C++ FakeTensor
-# mode: instead of tracing tracing_mode="fake"/"symbolic" directly, we trace
-# tracing_mode="real" inside an active C++ FakeTensorMode
-if MAKE_FX_CPP_FAKE_TENSOR:
+# Under CPP_FAKETENSOR=1 this whole suite exercises the C++ FakeTensor mode:
+# instead of tracing tracing_mode="fake"/"symbolic" directly, we trace
+# tracing_mode="real" inside an active C++ FakeTensorMode.
+if torch._dynamo.config.use_cpp_fake_tensor:
     def make_fx(f, *args, tracing_mode="real", decomposition_table=None, **kwargs):
         if tracing_mode in ("fake", "symbolic"):
             return make_fx_cpp_fake(
@@ -58,7 +55,7 @@ else:
 
 # Mirror test_fake_tensor.py: under the C++ fake path, make bare FakeTensorMode()
 # construction build a CppFakeTensorMode so the suite exercises it end to end.
-if MAKE_FX_CPP_FAKE_TENSOR:
+if torch._dynamo.config.use_cpp_fake_tensor:
     from torch._subclasses.fake_tensor import CppFakeTensorMode, FakeTensorConverter
 
     def FakeTensorMode(

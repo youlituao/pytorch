@@ -2,7 +2,6 @@ from typing import Any
 
 import torch.fx
 from torch._subclasses.fake_tensor import (
-    CppFakeTensorMode,
     FakeTensorMode,
     is_fake_tensor,
     FakeTensor
@@ -125,9 +124,7 @@ class FakeTensorProp(torch.fx.Interpreter):
             for a in args
             if isinstance(a, FakeTensor)  # noqa: ISINSTANCE_FAKE_TENSOR
         ]
-        cpp_fake_mode = CppFakeTensorMode._get_active_cpp_fake_tensor_mode()
-
-        with cpp_fake_mode.activated() if cpp_fake_mode is not None else self._mode:
+        with self._mode:
             try:
                 return super().run(*args)
             finally:

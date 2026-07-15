@@ -1539,15 +1539,10 @@ def detect_fake_mode(
         maybe_get_fake_mode,
     )
 
-    active_cpp_fake_mode = CppFakeTensorMode._get_active_cpp_fake_tensor_mode()
-    if active_cpp_fake_mode is not None:
-        return active_cpp_fake_mode
-
     if dynamo_config.use_cpp_fake_tensor:
-        # Under CPP_FAKETENSOR=1, only a C++ FakeTensorMode is valid. If none is
-        # active, return None (matching the Python path) rather than creating one
-        # or falling back to a Python FakeTensorMode.
-        return None
+        # Under CPP_FAKETENSOR=1, only a C++ FakeTensorMode is valid: return the
+        # active one, or None rather than falling back to a Python FakeTensorMode.
+        return CppFakeTensorMode._get_active_cpp_fake_tensor_mode()
 
     # If TracingContext has a fake_mode, use it authoritatively.
     # This is the case when Dynamo is driving compilation - any fake tensors

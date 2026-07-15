@@ -102,9 +102,7 @@ torch._dynamo.config.fake_tensor_cache_crosscheck_enabled = True
 
 device_type = acc.type if (acc := torch.accelerator.current_accelerator()) else "cpu"
 
-CPP_FAKETENSOR = os.environ.get("CPP_FAKETENSOR", "0") == "1" and hasattr(
-    torch._C, "_is_fake_tensor"
-)
+CPP_FAKETENSOR = os.environ.get("CPP_FAKETENSOR", "0") == "1"
 
 skipIfCppFakeTensor = unittest.skipIf(
     CPP_FAKETENSOR,
@@ -1627,8 +1625,16 @@ class FakeTensorTest(TestCase):
     def test_tolist(self):
         shape_env = ShapeEnv()
         with FakeTensorMode(allow_fallback_kernels=False, shape_env=shape_env):
-            x = torch.rand([10])
-            x.tolist()
+            # 1-D: flat list of (symbolic) scalars.
+            flat = torch.rand([10]).tolist()
+            self.assertEqual(len(flat), 10)
+            self.assertNotIsInstance(flat[0], list)
+            # Multi-dim exercises the recursive fake tolist path.
+            nested = torch.rand([2, 3]).tolist()
+            self.assertEqual(len(nested), 2)
+            self.assertTrue(all(len(row) == 3 for row in nested))
+            # 0-D returns a scalar, not a list.
+            self.assertNotIsInstance(torch.rand(()).tolist(), list)
 
     # Propagate real tensors doesn't work with fake-on-fake
     @expectedFailurePropagateRealTensors

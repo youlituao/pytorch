@@ -331,15 +331,15 @@ def maybe_get_fake_mode(t: object) -> FakeTensorMode | CppFakeTensorMode | None:
         unwrapped = torch._C._functorch.get_unwrapped(t)
         return maybe_get_fake_mode(unwrapped)
     elif isinstance(t, Tensor):
-        return torch._C.maybe_get_fake_mode(t)
+        return torch._C._maybe_get_fake_mode(t)
     return None
 
 
 def maybe_get_real_tensor(x: object) -> Tensor | None:
     if isinstance(x, FakeTensor):  # noqa: ISINSTANCE_FAKE_TENSOR
         return x.real_tensor
-    if isinstance(x, Tensor) and torch._C._is_fake_tensor(x):
-        return torch._C._get_fake_real_tensor(x)
+    # C++ fakes don't carry a real tensor (propagate_real_tensors is not
+    # implemented for the C++ path), so there is nothing to return.
     return None
 
 
@@ -441,7 +441,7 @@ class CppFakeTensorMode:
         symbolic_context: SymbolicContext | None = None,
         trace: bool = True,
     ) -> Tensor:
-        return torch._C.from_tensor(
+        return torch._C._from_tensor(
             tensor,
             source=source,
             symbolic_context=symbolic_context,
@@ -450,7 +450,7 @@ class CppFakeTensorMode:
     def from_meta_and_device(self, t: Tensor, device: torch.device) -> Tensor:
         # i could branch in the existing converter but i think keeping it separate
         # for now is better...if we going to eventually delete Python converter?
-        return torch._C.from_meta_and_device(t, device)
+        return torch._C._from_meta_and_device(t, device)
 
     # need for op_impl
     @contextlib.contextmanager
@@ -467,11 +467,6 @@ class CppFakeTensorMode:
             finally:
                 self.in_kernel_invocation = prev
 
-def cpp_fake_tensor_mode_active() -> bool:
-    return (
-        hasattr(torch._C, "_is_fake_tensor")
-        and CppFakeTensorMode._get_active_cpp_fake_tensor_mode() is not None
-    )
 
 @functools.cache
 def get_schema_info(func: OpOverload) -> torch._C._SchemaInfo:
@@ -668,7 +663,7 @@ class FakeTensorConverter:
             # invocation manager (I think!)
             with no_dispatch():
                 if isinstance(fake_mode, CppFakeTensorMode):
-                    return torch._C.from_meta_and_device(
+                    return torch._C._from_meta_and_device(
                         make_meta_t(), torch.device(device)
                     )
                 return FakeTensor(
@@ -853,7 +848,7 @@ class FakeTensorConverter:
         if maybe_memo is not None:
             return maybe_memo
         if isinstance(fake_mode, CppFakeTensorMode):
-            out = torch._C.from_meta_and_device(t, torch.device(device))
+            out = torch._C._from_meta_and_device(t, torch.device(device))
         else:
             out = FakeTensor(
                 fake_mode, t, device, pytype=pytype, dispatch_keys=dispatch_keys

@@ -544,8 +544,7 @@ def create_aot_state(
     # that we generate in torch.compile.
     stack.enter_context(torch.autograd.set_multithreading_enabled(False))
     stack.enter_context(preserve_rng_state())
-    if CppFakeTensorMode._get_active_cpp_fake_tensor_mode() is None:
-        stack.enter_context(fake_mode)
+    stack.enter_context(fake_mode)
     stack.enter_context(python_dispatcher_mode)
     stack.enter_context(PhiloxStateTracker())
     stack.enter_context(

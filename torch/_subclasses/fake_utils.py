@@ -14,7 +14,6 @@ from torch._subclasses.fake_tensor import (
     MetadataMismatchError,
     tree_flatten_only,
     UnsupportedFakeTensorException,
-    is_fake_tensor,
 )
 from torch.utils._python_dispatch import TorchDispatchMode
 

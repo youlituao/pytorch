@@ -66,7 +66,6 @@ from torch._subclasses.fake_tensor import (
     is_fake_tensor,
     maybe_get_fake_constant,
     unset_fake_temporarily,
-    CppFakeTensorMode
 )
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.fx.experimental.symbolic_shapes import guard_or_false, statically_known_true
@@ -292,10 +291,11 @@ class Match:
         """
         from torch._inductor.virtualized import NullHandler, V
 
-        if not isinstance(V.fake_mode, NullHandler) or (V.fake_mode is None):
-            context = V.fake_mode
-        else:
-            context = contextlib.nullcontext()
+        context = (
+            V.fake_mode
+            if (not isinstance(V.fake_mode, NullHandler) or (V.fake_mode is None))
+            else contextlib.nullcontext()
+        )
 
         def should_propagate_eager_input_vals(nodes: list[torch.fx.Node]) -> bool:
             if len(nodes) != 1:
@@ -1853,7 +1853,6 @@ def register_replacement(
 
         sym_args: list[torch.SymInt] = []
         fake_mode = torch._dynamo.utils.detect_fake_mode(args)
-
         if fake_mode is None:
             raise AssertionError("fake_mode is None")
         with fake_mode:

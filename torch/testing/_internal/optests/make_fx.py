@@ -1,18 +1,11 @@
 # mypy: ignore-errors
 
 import contextlib
-import os
 
 import torch
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.testing._utils import wrapper_set_seed
 import torch.utils._pytree as pytree
-
-
-MAKE_FX_CPP_FAKE_TENSOR = (
-    os.environ.get("CPP_FAKETENSOR", "0") == "1"
-    and hasattr(torch._C, "_is_fake_tensor")
-)
 
 
 @contextlib.contextmanager
@@ -95,7 +88,10 @@ def make_fx_check(
     def run(f, *args, **kwargs):
         return wrapper_set_seed(f, *args, **kwargs)
 
-    if MAKE_FX_CPP_FAKE_TENSOR and tracing_mode in ("fake", "symbolic"):
+    if torch._dynamo.config.use_cpp_fake_tensor and tracing_mode in (
+        "fake",
+        "symbolic",
+    ):
         traced_f = make_fx_cpp_fake(f, tracing_mode)(*new_args)
     else:
         traced_f = make_fx(f, tracing_mode=tracing_mode)(*new_args)

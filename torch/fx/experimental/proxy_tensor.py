@@ -55,7 +55,6 @@ from torch._subclasses.fake_impls import fast_detach
 from torch._subclasses.fake_tensor import (
     maybe_get_fake_mode,
     is_fake_tensor,
-    cpp_fake_tensor_mode_active,
     CppFakeTensorMode,
     FakeTensor,
     FakeTensorMode,
@@ -65,9 +64,6 @@ from torch._subclasses.fake_tensor import (
     maybe_get_fake_mode,
     unset_fake_temporarily,
 )
-
-
-_has_cpp_fake_tensor = hasattr(torch._C, "_is_fake_tensor")
 
 
 from torch._subclasses.functional_tensor import FunctionalTensor
@@ -746,7 +742,7 @@ def extract_val(val: _ExtractValType, include_real: bool = False) -> _ExtractVal
         return {k: extract_val(v) for k, v in val.items()}
     elif isinstance(val, Tensor):
         if not val.is_sparse:
-            if cpp_fake_tensor_mode_active():
+            if CppFakeTensorMode._get_active_cpp_fake_tensor_mode() is not None:
                 return torch.empty_strided(  # revist this
                     val.shape, val.stride(), device=val.device, dtype=val.dtype
                 )
@@ -2998,16 +2994,6 @@ class _MakefxTracer:
                         f"Unexpected tracing type: {self.tracing_mode}"
                     )
 
-            cpp_fake_mode = (
-                CppFakeTensorMode._get_active_cpp_fake_tensor_mode()
-                if _has_cpp_fake_tensor
-                else None
-            )
-            if self.fake_tensor_mode is not None and cpp_fake_mode is not None:
-                cpp_fake_mode.set_allow_fallback_kernels(
-                    self.fake_tensor_mode.allow_fallback_kernels
-                )
-
             self._construct_modes_with_fx_tracer(self.fx_tracer)
             yield
         finally:
@@ -3210,7 +3196,7 @@ class _MakefxTracer:
             ProxyTorchDispatchMode, self.proxy_mode
         )
         with ExitStack() as stack:
-            if self.fake_tensor_mode and not cpp_fake_tensor_mode_active():
+            if self.fake_tensor_mode:
                 stack.enter_context(self.fake_tensor_mode)
             stack.enter_context(self.python_dispatcher_mode)
             stack.enter_context(self.proxy_function_mode)

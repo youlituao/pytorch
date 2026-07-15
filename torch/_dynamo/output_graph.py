@@ -856,7 +856,6 @@ class OutputGraph(OutputGraphCommon):
         # of the user marked dynamic dims
         import torch._functorch.config as _config
 
-        self.cpp_fake_mode: CppFakeTensorMode | None
         fake_mode: torch._subclasses.FakeTensorMode | CppFakeTensorMode
         if config.use_cpp_fake_tensor:
             # Under the C++ FakeTensorMode there is no Python FakeTensorMode:
@@ -865,10 +864,9 @@ class OutputGraph(OutputGraphCommon):
             # cpp mode. The cpp mode becomes the tracing context's fake_mode.
             from torch._subclasses.fake_tensor import FakeTensorConverter
 
-            self.cpp_fake_mode = CppFakeTensorMode.create_cpp_fake_tensor_mode(
+            fake_mode = CppFakeTensorMode.create_cpp_fake_tensor_mode(
                 FakeTensorConverter(), shape_env
             )
-            fake_mode = self.cpp_fake_mode
         else:
             with _config.patch(fake_tensor_allow_unsafe_data_ptr_access=False):
                 fake_mode = torch._subclasses.FakeTensorMode(
@@ -877,7 +875,6 @@ class OutputGraph(OutputGraphCommon):
                     allow_non_fake_inputs=bool(self.export),
                     export=self.export,
                 )
-            self.cpp_fake_mode = None
         self.tracing_context: TracingContext = TracingContext(fake_mode)
         self.tracing_context.traced_code.append(f_code)
         self.tracing_context.cudagraph_annotation = self.cudagraph_annotation
@@ -3022,34 +3019,35 @@ class OutputGraph(OutputGraphCommon):
             # Store old_fake_mode so it can be cleared at end of compile
             self._old_fake_mode = old_fake_mode
             if not self.export:
-                import torch._functorch.config as _config
+                if config.use_cpp_fake_tensor:
+                    from torch._subclasses.fake_tensor import FakeTensorConverter
 
-                with _config.patch(fake_tensor_allow_unsafe_data_ptr_access=False):
-                    # TODO(voz): The way export uses gm, and fake tensors, is not supported with us resetting
-
-                    # Why create a new FakeTensorMode?
-                    #
-                    # The reason this needs to be done is because when we do Dynamo tracing, fake
-                    # tensors can have their metadata mutated. Thus, the fake tensor we allocated
-                    # for any given tensor may no longer be valid for the beginning trace of the
-                    # graph. Nor is it convenient to "clone" the input tensors before mutating them,
-                    # since you have to preserve aliasing. So we just reconstruct the FakeTensorMode
-                    # from scratch when we go to AOTAutograd. But the ShapeEnv must be preserved as
-                    # Dynamo made decisions about what is dynamic or not / guards from the user code
-                    # that is not in graph.
-                    backend_fake_mode = torch._subclasses.FakeTensorMode(
-                        shape_env=old_fake_mode.shape_env,
+                    backend_fake_mode = CppFakeTensorMode.create_cpp_fake_tensor_mode(
+                        FakeTensorConverter(), old_fake_mode.shape_env
                     )
+                else:
+                    import torch._functorch.config as _config
+
+                    with _config.patch(fake_tensor_allow_unsafe_data_ptr_access=False):
+                        # TODO(voz): The way export uses gm, and fake tensors, is not supported with us resetting
+
+                        # Why create a new FakeTensorMode?
+                        #
+                        # The reason this needs to be done is because when we do Dynamo tracing, fake
+                        # tensors can have their metadata mutated. Thus, the fake tensor we allocated
+                        # for any given tensor may no longer be valid for the beginning trace of the
+                        # graph. Nor is it convenient to "clone" the input tensors before mutating them,
+                        # since you have to preserve aliasing. So we just reconstruct the FakeTensorMode
+                        # from scratch when we go to AOTAutograd. But the ShapeEnv must be preserved as
+                        # Dynamo made decisions about what is dynamic or not / guards from the user code
+                        # that is not in graph.
+                        backend_fake_mode = torch._subclasses.FakeTensorMode(
+                            shape_env=old_fake_mode.shape_env,
+                        )
                 # TODO(voz): Ostensibly, this should be scoped and
                 # restore back to old_fake_mode, but doing so currently violates
                 # a lot of fake_tensor ownership assumptions and runs afoul of detect_fake_mode
                 self.tracing_context.fake_mode = backend_fake_mode
-
-                if self.cpp_fake_mode is not None:
-                    self.cpp_fake_mode = CppFakeTensorMode.create_cpp_fake_tensor_mode(
-                        backend_fake_mode.fake_tensor_converter,
-                        backend_fake_mode.shape_env,
-                    )
 
             example_inputs = self.example_inputs()
 
@@ -4298,7 +4296,6 @@ class SubgraphTracer(fx.Tracer):
     ) -> fx.Proxy:
         if isinstance(example_value, torch.Tensor):
             self._input_versions_at_beginning.append(example_value._version)
-        if isinstance(example_value, torch.Tensor):
             ev_str = f"{example_value.__class__.__name__}(..., size={tuple(example_value.shape)})"
         else:
             ev_str = example_value

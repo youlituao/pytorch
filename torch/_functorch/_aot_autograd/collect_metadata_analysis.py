@@ -21,7 +21,7 @@ from torch import Tensor
 from torch._guards import detect_fake_mode
 from torch._library.opaque_object import is_custom_class
 from torch._logging import getArtifactLogger
-from torch._subclasses.fake_tensor import CppFakeTensorMode, FakeTensorMode
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch._subclasses.functional_tensor import FunctionalTensor, FunctionalTensorMode
 from torch._subclasses.meta_utils import safe_is_leaf
 from torch.fx.experimental.proxy_tensor import disable_autocast_cache
@@ -216,16 +216,11 @@ def run_functionalized_fw_and_collect_metadata(
         if fake_mode and (shape_env := fake_mode.shape_env):
             suppress_pending = shape_env.ignore_fresh_unbacked_symbols()
 
-        cpp_fake_mode = CppFakeTensorMode._get_active_cpp_fake_tensor_mode()
-        cpp_fake_ctx: contextlib.AbstractContextManager[Any] = (
-            cpp_fake_mode if cpp_fake_mode is not None else contextlib.nullcontext()
-        )
         with (
             disable_above,
             mode,
             suppress_pending,
             disable_autocast_cache(),
-            cpp_fake_ctx,
         ):
             # precondition: The passed in function already handles unflattening inputs + flattening outputs
             flat_f_args = pytree.tree_map(_to_fun, flat_args)

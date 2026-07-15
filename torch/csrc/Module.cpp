@@ -3325,10 +3325,6 @@ Call this whenever a new thread is created in order to propagate values from
   py_module.def(
       "_has_storage", [](const at::Tensor& x) { return x.has_storage(); });
 
-  py_module.def("_is_fake_tensor", [](const at::Tensor& t) -> bool {
-    return t.is_fake();
-  });
-
   py_module.def("_fake_tensor_device", [](const at::Tensor& t) -> c10::Device {
     auto fd = t.unsafeGetTensorImpl()->fake_device();
     TORCH_CHECK(fd.has_value(), "Tensor does not have a fake device");
@@ -3336,7 +3332,7 @@ Call this whenever a new thread is created in order to propagate values from
   });
 
   py_module.def(
-      "from_tensor",
+      "_from_tensor",
       [](const at::Tensor& real,
          const py::object& source,
          const py::object& symbolic_context) -> at::Tensor {
@@ -3369,7 +3365,7 @@ Call this whenever a new thread is created in order to propagate values from
       py::arg("symbolic_context") = py::none());
 
   py_module.def(
-      "from_meta_and_device",
+      "_from_meta_and_device",
       [](const at::Tensor& meta, c10::Device device) -> at::Tensor {
         auto mode = c10::impl::FakeTensorModeTLS::get_state();
         TORCH_CHECK(mode != nullptr, "No C++ FakeTensorMode is active");
@@ -3389,7 +3385,7 @@ Call this whenever a new thread is created in order to propagate values from
         mode->fake_mode_pyobj_->ptr(getPyInterpreter()));
   });
 
-  py_module.def("maybe_get_fake_mode", [](const at::Tensor& t) -> py::object {
+  py_module.def("_maybe_get_fake_mode", [](const at::Tensor& t) -> py::object {
     if (!t.defined() || !t.is_fake()) {
       return py::none();
     }
@@ -3414,13 +3410,6 @@ Call this whenever a new thread is created in order to propagate values from
       return py::none();
     }
     return py::cast(*constant);
-  });
-
-  // C++ FakeTensors do not carry a real tensor yet (propagate_real_tensors is
-  // not implemented in C++), so this always returns None. It mirrors the other
-  // fake-attribute accessors so Python can query real_tensor uniformly.
-  py_module.def("_get_fake_real_tensor", [](const at::Tensor& t) -> py::object {
-    return py::none();
   });
 
   py_module.def(
