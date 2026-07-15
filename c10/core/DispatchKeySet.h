@@ -315,7 +315,7 @@ class DispatchKeySet final {
     return static_cast<bool>((repr_ & ks.repr_) != 0);
   }
   // Test if DispatchKeySet is a superset of ks.
-  bool isSupersetOf(DispatchKeySet ks) const noexcept {
+  [[nodiscard]] bool isSupersetOf(DispatchKeySet ks) const noexcept {
     return (repr_ & ks.repr_) == ks.repr_;
   }
   // Perform set union
@@ -389,10 +389,10 @@ class DispatchKeySet final {
     return DispatchKeySet(repr_ & ~(DispatchKeySet(b).repr_));
   }
   // Is the set empty?  (AKA undefined tensor)
-  bool empty() const noexcept {
+  [[nodiscard]] bool empty() const noexcept {
     return repr_ == 0;
   }
-  uint64_t raw_repr() const noexcept {
+  [[nodiscard]] uint64_t raw_repr() const noexcept {
     return repr_;
   }
 
@@ -400,7 +400,7 @@ class DispatchKeySet final {
     return DispatchKeySet(RAW, x);
   }
 
-  DispatchKey highestFunctionalityKey() const noexcept {
+  [[nodiscard]] DispatchKey highestFunctionalityKey() const noexcept {
     auto functionality_idx = indexOfHighestBit();
     // This means that none of the functionality bits were set.
     if (functionality_idx < num_backends)
@@ -416,7 +416,7 @@ class DispatchKeySet final {
   // here that can also handle "fake" backends like FPGA, because they need to
   // map to the AutogradOther key. For those backends, we return
   // BackendComponent::InvalidBit.
-  BackendComponent highestBackendKey() const noexcept {
+  [[nodiscard]] BackendComponent highestBackendKey() const noexcept {
     // mask to mask out functionality bits
     auto backend_idx =
         DispatchKeySet(repr_ & full_backend_mask).indexOfHighestBit();
