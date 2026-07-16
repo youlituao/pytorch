@@ -1423,6 +1423,13 @@ class SideEffectsProxyDict(collections.abc.MutableMapping[kV, VariableTracker]):
         elif isinstance(vt, variables.LocalGeneratorFunctionVariable):
             return SideEffectsProxyDict.get_example_value_dict(vt.vt)
         else:
+            if isinstance(vt, variables.WrapperUserFunctionVariable):
+                # get_real_python_backed_value returns the inline target, which
+                # may be a method and owns no __dict__ of its own. vt.source
+                # denotes the wrapper, and the keys below are given sources under
+                # it, so read the wrapper's __dict__ to keep values and sources
+                # describing the same object.
+                return object.__getattribute__(vt.wrapper_obj, "__dict__")
             value = vt.get_real_python_backed_value()
             if value is not NO_SUCH_SUBOBJ:
                 if isinstance(vt, variables.UserDefinedObjectVariable):

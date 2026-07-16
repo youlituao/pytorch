@@ -8138,7 +8138,6 @@ SavedForBackwardsAOTOutput(idx=5)""",
         # that would force a recompile when the length/signal relationship flips.
         self.assertEqual(cnt.frame_count, 1)
 
-    @unittest.expectedFailure
     def test_method_dunder_dict_setitem(self):
         # Reproducer for: getattr(obj, method_name).__dict__['key'] = value
         # method.__dict__ is handled specially by CPython at C level (no
@@ -8153,6 +8152,79 @@ SavedForBackwardsAOTOutput(idx=5)""",
         x = torch.randn(2)
         _ = fn(x)
         self.assertTrue(getattr(self, self._testMethodName).__dict__.get("slow_test"))
+
+    # https://github.com/pytorch/pytorch/issues/190171
+    @parametrize(
+        "kind",
+        ["module_method", "plain_method", "classmethod", "staticmethod", "function"],
+    )
+    def test_getattr_on_compiled_method(self, kind):
+        # torch.compile(obj.meth) stores the bound method in
+        # _torchdynamo_inline. A method owns no __dict__ and forwards lookups to
+        # __func__, so materializing its __dict__ used to raise AttributeError.
+        # staticmethod/function are controls: those are plain functions.
+        class Mod(torch.nn.Module):
+            def meth(self, x):
+                return x
+
+        class Plain:
+            def meth(self, x):
+                return x
+
+            @classmethod
+            def cls_meth(cls, x):
+                return x
+
+            @staticmethod
+            def stat(x):
+                return x
+
+        def free_fn(x):
+            return x
+
+        target = {
+            "module_method": Mod().meth,
+            "plain_method": Plain().meth,
+            "classmethod": Plain.cls_meth,
+            "staticmethod": Plain().stat,
+            "function": free_fn,
+        }[kind]
+        wrapped = torch.compile(target, backend="eager")
+
+        def fn(x):
+            return x + 1, wrapped.__name__, wrapped.__qualname__
+
+        x = torch.zeros(1)
+        expected = fn(x)
+        actual = torch.compile(fn, backend="eager", fullgraph=True)(x)
+        self.assertEqual(expected, actual)
+
+    # https://github.com/pytorch/pytorch/issues/190171
+    def test_getfullargspec_on_dynamo_ctx_method(self):
+        # What pytorch-lightning does: rebind a step method to a dynamo-wrapped
+        # version, then introspect its signature from inside the traced region.
+        traced = []
+
+        def takes_param(fn, name):
+            if hasattr(fn, "__wrapped__"):
+                fn = fn.__wrapped__
+            return name in inspect.getfullargspec(fn).args
+
+        class Model(torch.nn.Module):
+            def step(self, x, dataloader_iter=None):
+                traced.append(takes_param(self.step, "dataloader_iter"))
+                return x * 2
+
+            def forward(self, x):
+                return self.step(x)
+
+        model = Model()
+        compiled = torch.compile(model, backend="eager")
+        model.step = compiled.dynamo_ctx(model.step)
+
+        expected = takes_param(model.step, "dataloader_iter")
+        compiled(torch.randn(4))
+        self.assertEqual(traced, [expected])
 
     def test_elementwise_dtypes_constant_fold(self):
         from torch._prims_common import (

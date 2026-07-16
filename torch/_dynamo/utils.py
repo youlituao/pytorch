@@ -4431,6 +4431,10 @@ def object_has_getattribute(value: Any) -> bool:
 def object_setattr_ignore_descriptor(obj: Any, name: str, value: Any) -> None:
     # Mirror the instance-dict update path in _PyObject_GenericSetAttrWithDict:
     # https://github.com/python/cpython/blob/v3.13.0/Objects/object.c#L1679-L1741
+    if isinstance(obj, types.MethodType):
+        # A method owns no __dict__; it forwards attribute lookups to __func__,
+        # and object.__getattribute__ skips that forwarding.
+        obj = obj.__func__
     try:
         d = object.__getattribute__(obj, "__dict__")
     except AttributeError:
@@ -4447,6 +4451,8 @@ def object_setattr_ignore_descriptor(obj: Any, name: str, value: Any) -> None:
 def object_delattr_ignore_descriptor(obj: Any, name: str) -> None:
     # Same path as object_setattr_ignore_descriptor with a NULL value.
     # https://github.com/python/cpython/blob/v3.13.0/Objects/object.c#L1679-L1741
+    if isinstance(obj, types.MethodType):
+        obj = obj.__func__
     try:
         d = object.__getattribute__(obj, "__dict__")
     except AttributeError:
