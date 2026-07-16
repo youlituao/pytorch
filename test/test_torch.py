@@ -4251,6 +4251,25 @@ class TestTorchDeviceType(TestCase):
         doubles = torch.randn(2 * sz, dtype=dtype, device=device)
         self.unary_check_input_output_mem_overlap(
             doubles, sz, lambda input, out: out.copy_(input))
+        x = torch.arange(8, dtype=dtype, device=device).reshape(2, 2, 2)
+        x = x.permute(2, 1, 0)
+        with self.assertRaisesRegex(RuntimeError, "unsupported operation"):
+            x[0].copy_(x[0].t())
+        x = torch.arange(2, dtype=dtype, device=device).reshape(2, 1)
+        x.copy_(x.as_strided((2, 1), (1, 0)))
+        x = torch.arange(6, dtype=dtype, device=device).reshape(3, 2)
+        expected = x[0:1].clone().expand_as(x)
+        x.copy_(x[0:1].expand_as(x))
+        self.assertEqual(x, expected)
+        x = torch.arange(4, dtype=dtype, device=device)
+        with self.assertRaisesRegex(RuntimeError, "unsupported operation"):
+            x.as_strided((2, 2), (1, 2)).copy_(x.as_strided((2, 2), (0, 1)))
+        base = torch.empty(0, dtype=dtype, device=device)
+        base.as_strided((1, 0), (1, 1)).copy_(base.as_strided((0,), (1,)))
+        if torch.device(device).type == "cpu":
+            base = torch.arange(8, dtype=torch.float16, device=device)
+            with self.assertRaisesRegex(RuntimeError, "unsupported operation"):
+                base.view(torch.float32).copy_(base[:4])
 
     # FIXME: convert to ErrorInputs
     # (but have to extend ErrorInputs to handle inplace-only errors!)
