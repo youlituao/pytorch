@@ -242,6 +242,19 @@ def rocm_bundle(rocm_home: Path) -> tuple[list[BundledLib], list[AuxFile]]:
         if os_lib.is_file():
             libs.append(BundledLib(src=os_lib, dest_name=os_lib.name))
 
+    # TheRock multi-arch wheels vendor their OS-side deps (libdrm, liblzma,
+    # libnuma, ...) under lib/rocm_sysdeps/lib and the ROCm libs reference them by
+    # their versioned soname. On the OS/tarball layout this dir is absent and
+    # those deps come from rocm_os_deps()/system paths instead, so this block is
+    # a no-op there.
+    sysdeps_lib = rocm_home / "lib" / "rocm_sysdeps" / "lib"
+    if sysdeps_lib.is_dir():
+        seen = {lib.dest_name for lib in libs}
+        for so in sorted(sysdeps_lib.glob("*.so*")):
+            if so.is_file() and not so.is_symlink() and so.name not in seen:
+                libs.append(BundledLib(src=so, dest_name=so.name))
+                seen.add(so.name)
+
     archs = rocm_arch_filter(os.environ.get("PYTORCH_ROCM_ARCH", ""))
     aux: list[AuxFile] = []
     for sub in ("rocblas", "hipblaslt", "hipsparselt"):
