@@ -388,10 +388,37 @@ c10::SymBool TensorImpl::sym_is_non_overlapping_and_dense_custom() const {
 }
 
 IntArrayRef TensorImpl::sizes_custom() const {
-  if (C10_UNLIKELY(
-          matches_python_custom(SizesStridesPolicy::CustomSizes) ||
-          has_symbolic_sizes_strides_)) {
+  // for faketensors with symints, a return type of IntArrayRef is problematic
+  // because in order to return a ref you need to have smth owning it and for
+  // SymInts this is not materialized yet
+  if (C10_UNLIKELY(matches_python_custom(SizesStridesPolicy::CustomSizes))) {
     return (*c10::impl::getGlobalPyInterpreter())->sizes(this);
+  }
+  if (C10_UNLIKELY(has_symbolic_sizes_strides_)) {
+    // to detemrine if a tensor is Python FakeTensor
+    // we check if tensor is not c++ faketensor and Fake has not been
+    // excluded from TLS
+    // fakeFallback will exclude Fake key explicitly before dispatching
+    // to meta kernel
+    // also not excluded != included since its different bits or smth
+
+    // for Python FakeTensor, we use PyInterpreter to call .sizes() and guard
+    // the SymInts with the concrete integer value. this is stored on the
+    // PyObject which is tied to the lifetime of the tensor
+    if (!is_fake() &&
+        !c10::impl::tls_is_dispatch_key_excluded(DispatchKey::Fake)) {
+      if (auto* interp = c10::impl::getGlobalPyInterpreter()) {
+        return (*interp)->sizes(this);
+      }
+    } else {
+      // for C++ FakeTensors that haven't crossed the Python boundary, we don't
+      // have a PyInterpreter yet
+      // so we call guard_int() directly here to materialize the vector
+      // and we store this on the SymbolicShapeMeta in the tensor's TensorImpl
+      // so the lifetime is also equivalently tied to the lifetime of the tensor
+      // and is owned by SymbolicShapeMeta
+      return symbolic_shape_meta().materialized_sizes();
+    }
   }
   return sizes_default();
 }
@@ -433,10 +460,22 @@ c10::Device TensorImpl::device_custom() const {
 }
 
 IntArrayRef TensorImpl::strides_custom() const {
-  if (C10_UNLIKELY(
-          matches_python_custom(SizesStridesPolicy::CustomStrides) ||
-          has_symbolic_sizes_strides_)) {
+  // for faketensors with symints, a return type of IntArrayRef is problematic
+  // because in order to return a ref you need to have smth owning it and for
+  // SymInts this is not materialized yet
+  if (C10_UNLIKELY(matches_python_custom(SizesStridesPolicy::CustomStrides))) {
     return (*c10::impl::getGlobalPyInterpreter())->strides(this);
+  }
+  if (C10_UNLIKELY(has_symbolic_sizes_strides_)) {
+    // same reasoning as sizes_custom() above
+    if (!is_fake() &&
+        !c10::impl::tls_is_dispatch_key_excluded(DispatchKey::Fake)) {
+      if (auto* interp = c10::impl::getGlobalPyInterpreter()) {
+        return (*interp)->strides(this);
+      }
+    } else {
+      return symbolic_shape_meta().materialized_strides();
+    }
   }
   return strides_default();
 }
@@ -471,6 +510,16 @@ int64_t TensorImpl::storage_offset_custom() const {
     return (*c10::impl::getGlobalPyInterpreter())
         ->sym_storage_offset(this)
         .guard_int(__FILE__, __LINE__);
+  }
+  if (C10_UNLIKELY(has_symbolic_sizes_strides_)) {
+    if (!is_fake() &&
+        !c10::impl::tls_is_dispatch_key_excluded(DispatchKey::Fake)) {
+      if (auto* interp = c10::impl::getGlobalPyInterpreter()) {
+        return (*interp)->sym_storage_offset(this).guard_int(
+            __FILE__, __LINE__);
+      }
+    }
+    return symbolic_shape_meta().storage_offset_.guard_int(__FILE__, __LINE__);
   }
   return storage_offset_default();
 }
@@ -944,11 +993,14 @@ void TensorImpl::set_sizes_and_strides(
 
   refresh_numel();
   refresh_contiguous();
+  symbolic_shape_meta().refresh_materialized();
 }
 
 void TensorImpl::generic_set_sizes_contiguous(SymIntArrayRef sizes) {
   auto int_sizes = asIntArrayRefSlowOpt(sizes);
-  if (int_sizes.has_value()) {
+  // Match set_sizes_and_strides: skip the concrete fast-path when symbolic
+  // sizes are active, since set_sizes_contiguous rejects "customized tensors".
+  if (int_sizes.has_value() && !has_symbolic_sizes_strides_) {
     set_sizes_contiguous(*int_sizes);
     return;
   }
@@ -971,6 +1023,7 @@ void TensorImpl::generic_set_sizes_contiguous(SymIntArrayRef sizes) {
   refresh_numel();
   empty_tensor_restride_symint(
       MemoryFormat::Contiguous); // calls refresh_contiguous()
+  symbolic_shape_meta().refresh_materialized();
 }
 
 void TensorImpl::empty_tensor_restride_symint(MemoryFormat memory_format) {
@@ -1017,6 +1070,7 @@ void TensorImpl::empty_tensor_restride_symint(MemoryFormat memory_format) {
   // recompute contiguous flag, as currently NHWC/NCHW flags are not mutually
   // exclusive see #24090
   refresh_contiguous();
+  sym_shape_meta.refresh_materialized();
   // hard code some known true settings, for unbacked case
   // TODO: avoid chundering into the guards for computing these
   switch (memory_format) {
