@@ -1939,19 +1939,18 @@ class PythonWrapperCodegen(CodeGen):
     def codegen_deferred_alignment_copies(
         self, input_names: Iterable[str], stream: int = 0
     ) -> None:
-        """Emit alignment check + clone just before the first kernel on a given
-        stream that reads each input, hiding the cost behind GPU execution.
+        """Emit alignment checks/clones for the given stream.
 
-        An input read on a single stream gets one copy at its first reader.  An
-        input read on multiple streams (see mark_multistream_alignment) instead
-        gets one copy per consuming stream, each cloning a preserved copy of the
-        original input.  That keeps the clones independent and each ordered on
-        its own stream: a single shared copy runs on -- and is ordered only
-        after -- the first reader's stream, so a consumer on another stream
-        could read it before the clone completed (a cross-stream race) or alias
-        another stream's buffer.  copy_if_misaligned never mutates its argument
-        (it returns the original or a fresh clone), so cloning the preserved
-        original from several streams concurrently is safe."""
+        An input with an alignment constraint needs that input to be
+        potentially reallocated. This emits the proper copy_if_misaligned calls
+        to perform that realignment.
+
+        For inputs read on a simple stream this is trivial: we emit immediately
+        before the first reader. Inputs read on multiple streams get 1 copy per
+        stream, each reading from a preserved version of the original input.
+        This ensures we do not need to worry about ordering between multiple
+        streams.
+        """
         if V.graph.cpp_wrapper:
             return
         for name in input_names:
@@ -1983,19 +1982,6 @@ class PythonWrapperCodegen(CodeGen):
             if name in self._pending_alignment_copies:
                 self._pending_alignment_copies.discard(name)
                 self._multistream_alignment_copies.add(name)
-
-    def codegen_alignment_orig_dealloc(self, input_names: Iterable[str]) -> None:
-        """Free the preserved original (``{name}_orig``) of a multistream
-        alignment input once its last reader has been emitted, so it does not
-        pin the input tensor for the rest of the call.  Mirrors the single-stream
-        path, which drops the original the moment its one copy is made
-        (``name = copy_if_misaligned(name)``)."""
-        if V.graph.cpp_wrapper:
-            return
-        for name in input_names:
-            if name in self._alignment_orig_saved:
-                self._alignment_orig_saved.discard(name)
-                self.writeline(f"del {name}_orig")
 
     # this function (and below) takes the graph name as input so
     # that stream caching happens per graph instance. this
@@ -4404,6 +4390,13 @@ class PythonWrapperCodegen(CodeGen):
         # can be freed but not reused
         if isinstance(buffer, (ir.InputBuffer, ir.TorchBindObject)):
             self.writeline(FreeLine(self, buffer))
+            # A multistream input keeps a preserved copy of its original
+            # ({name}_orig, see codegen_deferred_alignment_copies) that each
+            # per-stream clone reads from; its lifetime matches the input's, so
+            # free it here on the normal last_usage -> codegen_free path.
+            if name in self._alignment_orig_saved:
+                self._alignment_orig_saved.discard(name)
+                self.writeline(self.make_free_by_names([f"{name}_orig"]))
             return
 
         if isinstance(buffer.get_output_spec(), ir.CommBufferLayout):
