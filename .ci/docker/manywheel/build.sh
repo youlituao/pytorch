@@ -84,9 +84,8 @@ case ${image} in
         DEVTOOLSET_VERSION="13"
         GPU_IMAGE=amd64/almalinux:8
         THEROCK_INDEX_URL="https://repo.amd.com/rocm/whl-multi-arch/"
-        # FIXME: temporarily pin the TheRock ROCm wheels to the June 12 build
-        # while the rolling multi-arch wheel index is unstable.
-        THEROCK_VERSION="7.14.0a20260612"
+        # Pin to the published 7.14.0 meta-package on the multi-arch index.
+        THEROCK_VERSION="7.14.0"
         PYTORCH_ROCM_ARCH="gfx908;gfx90a;gfx942;gfx950;gfx1030;gfx1100;gfx1101;gfx1102;gfx1103;gfx1200;gfx1201;gfx1150;gfx1151"
         DOCKER_GPU_BUILD_ARG="--build-arg PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH} --build-arg DEVTOOLSET_VERSION=${DEVTOOLSET_VERSION} --build-arg THEROCK_INDEX_URL=${THEROCK_INDEX_URL} --build-arg THEROCK_VERSION=${THEROCK_VERSION}"
         ;;

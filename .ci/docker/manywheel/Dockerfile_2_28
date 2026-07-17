@@ -180,7 +180,7 @@ ARG DEVTOOLSET_VERSION=13
 # SDK and symlinks its root to /opt/rocm so the rest of the manywheel pipeline
 # (build_env_setup.py / repair_wheel.py) keeps discovering ROCm at /opt/rocm.
 ARG THEROCK_INDEX_URL=https://repo.amd.com/rocm/whl-multi-arch/
-ARG THEROCK_VERSION=7.14.0a20260612
+ARG THEROCK_VERSION=7.14.0
 ENV ROCM_PATH /opt/rocm
 ENV MKLROOT /opt/intel
 # cmake-3.28.4 from pip to get enable_language(HIP)

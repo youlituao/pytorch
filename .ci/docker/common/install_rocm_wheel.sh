@@ -10,9 +10,8 @@ set -exou pipefail
 
 # https://repo.amd.com/rocm/whl-multi-arch/ hosts the multi-arch ROCm wheels.
 THEROCK_INDEX_URL="${THEROCK_INDEX_URL:-https://repo.amd.com/rocm/whl-multi-arch/}"
-# FIXME: temporarily pin the TheRock ROCm wheels while the rolling multi-arch
-# wheel index is unstable.
-THEROCK_VERSION="${THEROCK_VERSION:-7.14.0a20260612}"
+# Pin to the published rocm meta-package on the multi-arch index (currently 7.14.0).
+THEROCK_VERSION="${THEROCK_VERSION:-7.14.0}"
 
 echo "=============================================="
 echo "ROCm Multi-Arch Wheel Installation (TheRock)"
