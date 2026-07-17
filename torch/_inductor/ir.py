@@ -1353,6 +1353,17 @@ def get_reduction_combine_fn(
         raise NotImplementedError(f"unknown reduction_type={reduction_type}")
 
 
+def _strict_sum_no_unroll(reduction_type: str) -> bool:
+    """Strict numerics: keep a strict ``sum`` as a real reduction (don't unroll to pointwise) so
+    it gets the INNER_TREE codegen -- but only when INNER_TREE is actually available (else strict
+    falls back to default codegen, so unrolling should behave as default too)."""
+    if config.numerics != "strict" or reduction_type != "sum":
+        return False
+    from torch.utils._triton import has_triton_reduction_ordering
+
+    return has_triton_reduction_ordering()
+
+
 @ir_dataclass
 class Reduction(Loops):
     reduction_ranges: Sequence[_IntLike]
@@ -1777,6 +1788,7 @@ class Reduction(Loops):
             and int(reduction_numel) < config.unroll_reductions_threshold
             and (sympy_product(ranges) != 1 or is_gpu(device.type))
             and reduction_type != "dot"
+            and not _strict_sum_no_unroll(reduction_type)
         ):
             # When native matmul, don't unroll the dot reduction.
 
@@ -2369,6 +2381,7 @@ class ArgReduction(MultiOutputReduction):
             isinstance(reduction_numel, Integer)
             and int(reduction_numel) < config.unroll_reductions_threshold
             and (sympy_product(ranges) != 1 or is_gpu(device.type))
+            and not _strict_sum_no_unroll(reduction_type)
         ):
             unrolled_fn = Reduction._unroll_reduction_fn(
                 inner_fn, reduction_ranges, reduction_type, src_dtype

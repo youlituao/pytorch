@@ -40,6 +40,7 @@ from torch.utils._triton import (
     get_triton_version,
     has_triton_cpu_backend,
     has_triton_package,
+    has_triton_reduction_ordering,
     has_triton_stable_tma_api,
 )
 
@@ -5035,6 +5036,18 @@ class TritonKernel(SIMDKernel[TritonCSEVariable]):
             masks.append(self._load_mask)
         reduction_range_prefix = self.range_trees[-1].prefix[0]
 
+        # Strict "tree-then-linear": tree-reduce (INNER_TREE) each R0_BLOCK chunk, then
+        # LINEARLY accumulate the per-chunk partials across loop iterations. This matches
+        # eager #182986 / INNER_TREE-ATen (tree-then-linear), whereas Inductor's default is
+        # linear-accumulate-into-[XBLOCK,RBLOCK]-then-one-tree (linear-then-tree).
+        strict_sum_loop = (
+            config.numerics == "strict"
+            and reduction_type == "sum"
+            and not self.persistent_reduction
+            and not self.cooperative_reduction
+            and has_triton_reduction_ordering()
+        )
+
         # When we do native matmtul codegen,
         # we don't want to keep the R0_BLOCK/R1_BLOCK in the accumulator.
         # so instead of naively calling dense_size_str(), we filter out
@@ -5120,8 +5133,20 @@ class TritonKernel(SIMDKernel[TritonCSEVariable]):
                     result = f"{value}[:,:,None]"  # (Y,X) to (Y,X,R=1)
                     shape = [*value.shape, 1]
             else:
+                reduction_ordering = ""
+                if (
+                    config.numerics == "strict"
+                    and reduction_type == "sum"
+                    and has_triton_reduction_ordering()
+                ):
+                    # Force a deterministic, layout-independent reduction order.
+                    reduction_ordering = (
+                        ", reduction_ordering="
+                        "tl.constexpr(tl.ReductionOrdering.INNER_TREE)"
+                    )
                 result, shape = self.reduction_resize_and_shape(  # type: ignore[assignment]
-                    f"{triton_reduction_fn}({value}, {dim})", value.shape
+                    f"{triton_reduction_fn}({value}, {dim}{reduction_ordering})",
+                    value.shape,
                 )
 
             if result_type is not None:
@@ -5389,6 +5414,15 @@ class TritonKernel(SIMDKernel[TritonCSEVariable]):
                     self.body.writeline(
                         f"{accumulator} = tl.full({dense_size_str}, {default}, {acc_type})"
                     )
+                elif strict_sum_loop:
+                    # accumulator holds the running per-chunk-tree partial -> REDUCED shape
+                    # (reduction dims -> 1), not the full [XBLOCK, RBLOCK] tile.
+                    _nred = self.num_reduction_dims
+                    _red_list = self.dense_size_list()[:-_nred] + ["1"] * _nred
+                    accumulator.shape = tuple(_red_list)
+                    self.body.writeline(
+                        f"{accumulator} = tl.full([{', '.join(_red_list)}], {default}, {acc_type})"
+                    )
                 else:
                     self.body.writeline(
                         f"{accumulator} = tl.full({self.dense_size_str()}, {default}, {acc_type})"
@@ -5486,6 +5520,27 @@ class TritonKernel(SIMDKernel[TritonCSEVariable]):
                     dim,
                     dtype,
                 )
+            elif strict_sum_loop:
+                # tree-then-linear: mask the tail lanes to 0, tree-reduce this chunk with
+                # INNER_TREE (via final_reduction), then linearly add the partial. No trailing
+                # tree after the loop -- the linear accumulate IS the cross-chunk combine.
+                _zero = constant_repr(
+                    ir.Reduction.default_accumulator(reduction_type, src_dtype)
+                )
+                _masked = self.cse.generate(
+                    self.compute,
+                    where_cond(value, _zero),
+                    dtype=value.dtype,
+                    shape=value.shape,
+                )
+                _chunk_str, _chunk_dtype, _chunk_shape = final_reduction(
+                    self.compute, _masked, None
+                )
+                _chunk = self.cse.generate(
+                    self.compute, _chunk_str, dtype=_chunk_dtype, shape=_chunk_shape
+                )
+                self.compute.writeline(f"{accumulator} = {accumulator} + {_chunk}")
+                self.post_loop_combine.writeline(f"{result_var} = {accumulator}")
             else:
                 combine_fn = ir.get_reduction_combine_fn(reduction_type, src_dtype)
                 updated = combine_fn(accumulator, value)
@@ -6691,6 +6746,11 @@ class TritonKernel(SIMDKernel[TritonCSEVariable]):
             "store_cubin": config.triton.store_cubin,
             "deterministic": config.deterministic or config.batch_invariant,
             "batch_invariant": config.batch_invariant,
+            "numerics": (
+                "strict"
+                if config.numerics == "strict" and has_triton_reduction_ordering()
+                else config.numerics
+            ),
             "force_filter_reduction_configs": config.test_configs.force_filter_reduction_configs,
             "mix_order_reduction_allow_multi_stages": config.triton.mix_order_reduction_allow_multi_stages,
             "dynamic_disable_pipelining": config.triton.dynamic_disable_pipelining,
