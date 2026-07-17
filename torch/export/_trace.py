@@ -650,6 +650,91 @@ def _add_input_unbacked_bindings(gm: torch.fx.GraphModule) -> None:
             )
 
 
+def _apply_renames_to_signature(
+    signature: ExportGraphSignature,
+    renamed: dict[str, str],
+) -> None:
+    """Apply a batch of old-name-to-new-name renames to the signature atomically."""
+    from torch.export.graph_signature import (
+        CustomObjArgument,
+        SymBoolArgument,
+        SymFloatArgument,
+        SymIntArgument,
+        TensorArgument,
+        TokenArgument,
+    )
+
+    arg_types = (
+        TensorArgument,
+        SymIntArgument,
+        SymFloatArgument,
+        SymBoolArgument,
+        CustomObjArgument,
+        TokenArgument,
+    )
+    for spec in [*signature.input_specs, *signature.output_specs]:
+        if isinstance(spec.arg, arg_types) and spec.arg.name in renamed:
+            spec.arg.name = renamed[spec.arg.name]
+
+
+def _canonicalize_export_graph(
+    gm: torch.fx.GraphModule,
+    signature: ExportGraphSignature,
+) -> None:
+    """Canonicalize node order and names in an export graph and all subgraphs.
+
+    Reorders nodes into a deterministic topological order and renames them to
+    canonical names so that strict and non-strict export produce identical
+    graphs.  Updates ``signature`` to reflect the new node names.
+    """
+    import itertools
+
+    from torch._dynamo.output_graph import _is_safe_to_reorder
+    from torch.fx.passes.canonicalize import _computation_node_key, canonicalize_graph
+
+    for mod in gm.modules():
+        if isinstance(mod, torch.fx.GraphModule):
+            placeholder_ord = itertools.count()
+
+            def _key(
+                node: torch.fx.Node,
+                canonical_idx: dict[torch.fx.Node, int],
+                _ord: itertools.count = placeholder_ord,
+            ) -> object:
+                if node.op == "placeholder":
+                    return (0, next(_ord))
+                elif node.op == "get_attr":
+                    return (1, str(node.target))
+                elif node.op == "output":
+                    return (3,)
+                else:
+                    return _computation_node_key(node, canonical_idx)
+
+            # Unflatten expects nodes from the same nn_module_stack scope to
+            # be contiguous.  Treat module-boundary transitions as barriers
+            # so canonicalization never reorders across them.
+            prev_stack: list[tuple[str, ...] | None] = [None]
+
+            def _safe(node: torch.fx.Node, _prev: list = prev_stack) -> bool:
+                if not _is_safe_to_reorder(node):
+                    _prev[0] = tuple(node.meta.get("nn_module_stack", {}).keys())
+                    return False
+                stack = tuple(node.meta.get("nn_module_stack", {}).keys())
+                if stack != _prev[0]:
+                    _prev[0] = stack
+                    return False
+                return True
+
+            renamed = canonicalize_graph(
+                mod.graph,
+                _key,
+                _safe,
+                skip_rename_ops=frozenset({"placeholder"}),
+            )
+            if mod is gm and renamed:
+                _apply_renames_to_signature(signature, renamed)
+
+
 def _produce_aten_artifact(
     *,
     gm: torch.fx.GraphModule,
@@ -756,6 +841,9 @@ def _produce_aten_artifact(
     _preserve_requires_grad_pass(
         gm, export_graph_signature, fake_params_buffers, constants, flat_fake_args
     )
+
+    if torch._dynamo.config.canonicalize_output_graph_node_order:
+        _canonicalize_export_graph(gm, export_graph_signature)
 
     return ATenExportArtifact(
         gm,

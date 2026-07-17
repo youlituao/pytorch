@@ -628,11 +628,12 @@ def _canonical_key(node: fx.Node, canonical_idx: dict[fx.Node, int]) -> object:
     elif node.op == "output":
         return (3,)
     else:
-        input_indices = tuple(canonical_idx[n] for n in node.all_input_nodes)
-        return (2, node.graph._target_to_str(node.target), input_indices)
+        from torch.fx.passes.canonicalize import _computation_node_key
+
+        return _computation_node_key(node, canonical_idx)
 
 
-def _canonicalize_graph(graph: fx.Graph) -> fx.Graph:
+def _canonicalize_graph(graph: fx.Graph) -> None:
     """Canonicalize a Dynamo output graph's node order and names.
 
     Delegates to ``torch.fx.passes.canonicalize.canonicalize_graph`` with
@@ -640,7 +641,7 @@ def _canonicalize_graph(graph: fx.Graph) -> fx.Graph:
     """
     from torch.fx.passes.canonicalize import canonicalize_graph
 
-    return canonicalize_graph(graph, _canonical_key, _is_safe_to_reorder)
+    canonicalize_graph(graph, _canonical_key, _is_safe_to_reorder)
 
 
 def get_builtins_dict(global_scope: Scope) -> dict[str, Any]:
@@ -2942,11 +2943,14 @@ class OutputGraph(OutputGraphCommon):
             # CA backward graphs have side-effecting ops (call_accumulate_grad,
             # call_hook) that is_impure() doesn't flag, and a fixed positional
             # placeholder layout that must not be reordered.
+            #
+            # Export canonicalizes in torch.export._trace._produce_aten_artifact
+            # so both strict and non-strict export produce the same node order.
             if (
                 config.canonicalize_output_graph_node_order
+                and not torch._dynamo.compiled_autograd.in_compiled_autograd_region
                 and not self.export
                 and not torch.compiler.is_exporting()
-                and not torch._dynamo.compiled_autograd.in_compiled_autograd_region
             ):
                 _canonicalize_graph(self.graph)
 

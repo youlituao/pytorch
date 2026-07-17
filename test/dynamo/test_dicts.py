@@ -2269,8 +2269,8 @@ class DictTests(torch._dynamo.test_case.TestCase):
         graph = backend.graphs[0].graph
 
         names_once = [n.name for n in graph.nodes]
-        graph2 = _canonicalize_graph(graph)
-        names_twice = [n.name for n in graph2.nodes]
+        _canonicalize_graph(graph)
+        names_twice = [n.name for n in graph.nodes]
         self.assertEqual(names_once, names_twice)
 
     @torch._dynamo.config.patch(canonicalize_output_graph_node_order=True)
