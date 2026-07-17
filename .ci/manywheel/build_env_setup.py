@@ -197,7 +197,7 @@ def discover_rocm_home() -> str:
             for key in ("ROCM_PATH", "ROCM_HOME"):
                 prefix = f"export {key}="
                 if line.startswith(prefix):
-                    return line[len(prefix):].strip().strip('"').strip("'")
+                    return line[len(prefix) :].strip().strip('"').strip("'")
     try:
         out = subprocess.run(
             ["rocm-sdk", "path", "--root"],
@@ -210,6 +210,7 @@ def discover_rocm_home() -> str:
     except FileNotFoundError:
         pass
     return "/opt/rocm"
+
 
 PLATFORM_TAGS: dict[str, str] = {
     "x86_64": "manylinux_2_28_x86_64",
