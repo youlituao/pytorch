@@ -5438,7 +5438,6 @@ infinitely_differentiable_native_group_norm_backward(
     const c10::SymInt& C,
     const c10::SymInt& HxW,
     int64_t group,
-    double eps,
     std::array<bool, 3> grad_input_mask) {
   const int64_t G = group;
   const auto D = C / G;
@@ -5463,8 +5462,6 @@ infinitely_differentiable_native_group_norm_backward(
       // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
       gamma_tensor = gamma->reshape_symint({1, G, D, 1});
     }
-    const Tensor var =
-        ((rstd_tensor * rstd_tensor).reciprocal_() - eps).clamp_min(0);
     const Tensor rstd_cube = rstd_tensor * rstd_tensor * rstd_tensor;
     Tensor dvar;
     if (drstd.defined()) {
@@ -5497,13 +5494,25 @@ infinitely_differentiable_native_group_norm_backward(
                .reshape_as(X);
     }
   }
-  if (grad_input_mask[1] && dY.defined()) {
-    dgamma = ((ds - db * mean_tensor) * rstd_tensor)
-                 .sum(0)
-                 .reshape_as(toNonOptTensor(gamma));
+
+  auto dparam_options{
+      isDefined(gamma)
+          ? gamma->options() // NOLINT(bugprone-unchecked-optional-access)
+          : X.options().memory_format(at::MemoryFormat::Contiguous)};
+  if (grad_input_mask[1]) {
+    if (dY.defined()) {
+      dgamma =
+          ((ds - db * mean_tensor) * rstd_tensor).sum(0).reshape_symint({C});
+    } else {
+      dgamma = at::zeros_symint({C}, dparam_options);
+    }
   }
-  if (grad_input_mask[2] && dY.defined()) {
-    dbeta = db.sum(0).reshape_as(toNonOptTensor(gamma));
+  if (grad_input_mask[2]) {
+    if (dY.defined()) {
+      dbeta = db.sum(0).reshape_symint({C});
+    } else {
+      dbeta = at::zeros_symint({C}, dparam_options);
+    }
   }
 
   return std::make_tuple(std::move(dX), std::move(dgamma), std::move(dbeta));
