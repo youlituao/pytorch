@@ -1052,10 +1052,12 @@ class CppWrapperCpuArrayRef(CppWrapperCpu):
         args: list[str],
         device: str,
         *,
+        debug_args: list[str] | None = None,
+        stack_traces: OrderedSet[str] | None = None,
         input_handles: list[str] | None = None,
         num_scalars: int = 0,
         output_handle: str | None = None,
-        **_,
+        disable_autograd: bool = False,
     ) -> None:
         # In the abi_compatible mode, we call fallback aten ops through a C shim layer
         # Setting self.allow_stack_allocation to False because the exchange between
@@ -1080,10 +1082,12 @@ class CppWrapperCpuArrayRef(CppWrapperCpu):
             kernel,
             wrapped_args,
             device,
-            debug_args=args,
+            debug_args=debug_args if debug_args is not None else args,
             input_handles=input_handles,
             num_scalars=num_scalars,
             output_handle=output_handle,
+            stack_traces=stack_traces,
+            disable_autograd=disable_autograd,
         )
 
     def generate_scatter_fallback(self, node: ir.ScatterFallback):
@@ -1129,7 +1133,7 @@ class CppWrapperCpuArrayRef(CppWrapperCpu):
                         "Expect reduce to be None for aten.scatter_ with scalar src"
                     )
         line += ");"
-        self.writeline(line)
+        self.writelines(self.wrap_fallback_dispatch_cpp([line]))
 
     def generate_index_put_fallback(self, node: ir.IndexPutFallback) -> None:
         # No stack allocation when there is a fallback op
@@ -1156,7 +1160,9 @@ class CppWrapperCpuArrayRef(CppWrapperCpu):
         args.insert(
             0, f"borrow_arrayref_tensor_as_tensor({x})"
         )  # set x as the output tensor, this fallback mutates x.
-        self.writeline(self.wrap_kernel_call(kernel, args))
+        self.writelines(
+            self.wrap_fallback_dispatch_cpp([self.wrap_kernel_call(kernel, args)])
+        )
 
     def generate_fallback_kernel_with_runtime_lookup(
         self,
@@ -1186,6 +1192,16 @@ class CppWrapperCpuArrayRef(CppWrapperCpu):
         self.allow_stack_allocation = False
         self.writeline(
             f"AOTI_TORCH_ERROR_CODE_CHECK(aoti_torch_copy_(expensive_copy_to_tensor_if_needed({dst}), {src}, {non_blocking}));"
+        )
+
+    def codegen_fallback_device_copy(self, src, dst, non_blocking: bool | str):
+        # aoti_torch_tensor_copy_ takes AtenTensorHandle as input,
+        # while stack-allocation results in ArrayRefTensor
+        # so disable stack allocation here
+        self.allow_stack_allocation = False
+        dst = f"expensive_copy_to_tensor_if_needed({dst})"
+        self.codegen_fallback_line(
+            f"AOTI_TORCH_ERROR_CODE_CHECK({self.codegen_fallback_copy_call(dst, src, non_blocking)});"
         )
 
     def codegen_reinterpret_view(
