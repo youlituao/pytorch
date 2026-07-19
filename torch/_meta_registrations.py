@@ -637,6 +637,207 @@ def meta_philox_uniform_(self, key, low=0.0, high=1.0):
     return self
 
 
+def _check_philox_flat_slice_args(
+    op_name,
+    self,
+    total_numel,
+    start_indices,
+    block_sizes,
+    block_strides,
+    num_blocks,
+):
+    torch._check(
+        self.dtype.is_floating_point,
+        lambda: f"{op_name}: self must be a floating point tensor, got {self.dtype}",
+    )
+    torch._check(
+        total_numel >= 0,
+        lambda: f"{op_name}: total_numel must be non-negative",
+    )
+    torch._check(
+        len(start_indices) == len(block_sizes) == len(block_strides) == len(num_blocks),
+        lambda: f"{op_name}: index block arrays must have the same length",
+    )
+    torch._check(
+        self.numel() <= total_numel,
+        lambda: (
+            f"{op_name}: output numel {self.numel()} exceeds total_numel {total_numel}"
+        ),
+    )
+    torch._check(
+        total_numel <= torch.iinfo(torch.int32).max,
+        lambda: f"{op_name}: total_numel > INT_MAX is not supported yet",
+    )
+
+    mapped_numel = 0
+    for start_index, block_size, block_stride, block_count in zip(
+        start_indices, block_sizes, block_strides, num_blocks
+    ):
+        torch._check(
+            start_index >= 0,
+            lambda: f"{op_name}: start_index must be non-negative",
+        )
+        torch._check(
+            start_index <= total_numel,
+            lambda: (
+                f"{op_name}: start_index {start_index} exceeds total_numel "
+                f"{total_numel}"
+            ),
+        )
+        torch._check(
+            block_size >= 0,
+            lambda: f"{op_name}: block_size must be non-negative",
+        )
+        torch._check(
+            block_count >= 0,
+            lambda: f"{op_name}: num_blocks must be non-negative",
+        )
+        if block_size == 0 or block_count == 0:
+            continue
+        torch._check(
+            block_count <= total_numel // block_size,
+            lambda: f"{op_name}: block_size * num_blocks exceeds total_numel",
+        )
+        torch._check(
+            block_stride >= block_size,
+            lambda: (
+                f"{op_name}: block_stride {block_stride} must be at least "
+                f"block_size {block_size}"
+            ),
+        )
+        torch._check(
+            block_stride <= total_numel,
+            lambda: (
+                f"{op_name}: block_stride {block_stride} exceeds total_numel "
+                f"{total_numel}"
+            ),
+        )
+        local_numel = block_size * block_count
+        torch._check(
+            local_numel <= self.numel() - mapped_numel,
+            lambda: (
+                f"{op_name}: index blocks describe more than output numel "
+                f"{self.numel()}"
+            ),
+        )
+        end_index = start_index + (block_count - 1) * block_stride + block_size
+        torch._check(
+            end_index <= total_numel,
+            lambda: (
+                f"{op_name}: output blocks end at {end_index}, beyond total_numel "
+                f"{total_numel}"
+            ),
+        )
+        mapped_numel += local_numel
+
+    torch._check(
+        mapped_numel == self.numel(),
+        lambda: (
+            f"{op_name}: index blocks describe {mapped_numel} elements, "
+            f"expected output numel {self.numel()}"
+        ),
+    )
+
+
+def _check_philox_normal_std(std):
+    torch._check(
+        std >= 0.0,
+        lambda: f"normal expects std >= 0.0, but found std {std}",
+    )
+
+
+def _check_philox_uniform_bounds(self, low, high):
+    torch._check(
+        self.dtype.is_floating_point,
+        lambda: f"self must be a floating point tensor, got {self.dtype}",
+    )
+    dtype_min = torch.finfo(self.dtype).min
+    dtype_max = torch.finfo(self.dtype).max
+    torch._check(
+        low >= dtype_min,
+        lambda: f"from is out of bounds for {self.dtype}",
+    )
+    torch._check(
+        low <= dtype_max,
+        lambda: f"from is out of bounds for {self.dtype}",
+    )
+    torch._check(
+        high >= dtype_min,
+        lambda: f"to is out of bounds for {self.dtype}",
+    )
+    torch._check(
+        high <= dtype_max,
+        lambda: f"to is out of bounds for {self.dtype}",
+    )
+    torch._check(
+        low <= high,
+        lambda: (
+            "uniform_ expects to return a [from, to) range, but found "
+            f"from={low} > to={high}"
+        ),
+    )
+    torch._check(
+        high - low <= dtype_max,
+        lambda: (
+            f"uniform_ expects to-from <= {dtype_max}, "
+            f"but found to={high} and from={low}"
+        ),
+    )
+
+
+_PHILOX_DISTRIBUTION_NORMAL = 0
+_PHILOX_DISTRIBUTION_UNIFORM = 1
+
+
+def _check_philox_flat_slice_distribution(self, kind, params):
+    torch._check(
+        kind in (_PHILOX_DISTRIBUTION_NORMAL, _PHILOX_DISTRIBUTION_UNIFORM),
+        lambda: (
+            f"_philox_distribution_flat_slice_: unsupported distribution kind {kind}"
+        ),
+    )
+    torch._check(
+        len(params) == 2,
+        lambda: (
+            f"_philox_distribution_flat_slice_: distribution kind {kind} "
+            f"expects 2 parameters, got {len(params)}"
+        ),
+    )
+    torch._check(
+        all(not isinstance(param, complex) for param in params),
+        lambda: "_philox_distribution_flat_slice_: parameters must be real",
+    )
+    if kind == _PHILOX_DISTRIBUTION_NORMAL:
+        _check_philox_normal_std(params[1])
+    else:
+        _check_philox_uniform_bounds(self, params[0], params[1])
+
+
+@register_meta(aten._philox_distribution_flat_slice_.default)
+def meta_philox_distribution_flat_slice_(
+    self,
+    total_numel,
+    start_indices,
+    block_sizes,
+    block_strides,
+    num_blocks,
+    kind,
+    params,
+    generator=None,
+):
+    _check_philox_flat_slice_distribution(self, kind, params)
+    _check_philox_flat_slice_args(
+        "_philox_distribution_flat_slice_",
+        self,
+        total_numel,
+        start_indices,
+        block_sizes,
+        block_strides,
+        num_blocks,
+    )
+    return self
+
+
 @register_meta([aten._fft_c2r.default, aten._fft_c2r.out])
 @out_wrapper()
 def meta_fft_c2r(self: Tensor, dim: list[int], normalization: int, lastdim: int):
