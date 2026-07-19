@@ -1,12 +1,14 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates
 # Owner(s): ["oncall: distributed"]
 
+import contextlib
 import unittest
 from functools import partial
 from typing import Any, cast
 
 import torch
 from torch._library.utils import fill_defaults
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.distributed import StatefulRNGTensor
 from torch.distributed._local_tensor import LocalIntNode, LocalTensor, LocalTensorMode
 from torch.distributed._stateful_rng import (
@@ -15,6 +17,7 @@ from torch.distributed._stateful_rng import (
     _PHILOX_DISTRIBUTION_UNIFORM,
     _run_stateful_rng_op,
 )
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 from torch.testing._internal.common_utils import run_tests, TEST_CUDA, TestCase
 from torch.utils._python_dispatch import TorchDispatchMode
 
@@ -336,6 +339,37 @@ class TestStatefulRNGTensor(TestCase):
 
 
 class TestPhiloxDistributionFlatSliceOp(TestCase):
+    def test_symbolic_total_numel_meta_and_fake(self):
+        self.assertIn(
+            "SymInt total_numel",
+            str(torch.ops.aten._philox_distribution_flat_slice_.default._schema),
+        )
+
+        for device in ("meta", "cuda"):
+            with self.subTest(device=device):
+                shape_env = ShapeEnv()
+                total_numel = shape_env.create_unbacked_symint()
+                context = (
+                    FakeTensorMode(shape_env=shape_env)
+                    if device == "cuda"
+                    else contextlib.nullcontext()
+                )
+                with context:
+                    result = torch.empty(1, device=device)
+                    returned = torch.ops.aten._philox_distribution_flat_slice_(
+                        result,
+                        total_numel,
+                        [0],
+                        [1],
+                        [1],
+                        [1],
+                        _PHILOX_DISTRIBUTION_UNIFORM,
+                        [0.0, 1.0],
+                    )
+
+                self.assertIs(returned, result)
+                self.assertIsNone(total_numel.node.maybe_as_int())
+
     @unittest.skipIf(not TEST_CUDA, "CUDA is required")
     def test_invalid_calls_do_not_advance_generator(self):
         device = torch.device("cuda")

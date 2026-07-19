@@ -13,6 +13,7 @@
 #include <ATen/OpMathType.h>
 #include <curand_kernel.h>
 #include <curand_philox4x32_x.h>
+#include <c10/core/SymIntArrayRef.h>
 #include <c10/util/irange.h>
 #include <limits>
 #include <type_traits>
@@ -596,16 +597,22 @@ Tensor& _philox_normal_cuda_(
   return self;
 }
 
-Tensor& _philox_distribution_flat_slice_cuda_(
+Tensor& _philox_distribution_flat_slice_symint_cuda_(
     Tensor& self,
-    int64_t total_numel,
-    IntArrayRef start_indices,
-    IntArrayRef block_sizes,
-    IntArrayRef block_strides,
-    IntArrayRef num_blocks,
+    c10::SymInt total_numel,
+    c10::SymIntArrayRef start_indices,
+    c10::SymIntArrayRef block_sizes,
+    c10::SymIntArrayRef block_strides,
+    c10::SymIntArrayRef num_blocks,
     int64_t kind,
     ArrayRef<Scalar> params,
     std::optional<Generator> generator) {
+  const int64_t total_numel_int =
+      total_numel.guard_int(__FILE__, __LINE__);
+  const auto start_indices_int = C10_AS_INTARRAYREF_SLOW_ALLOC(start_indices);
+  const auto block_sizes_int = C10_AS_INTARRAYREF_SLOW_ALLOC(block_sizes);
+  const auto block_strides_int = C10_AS_INTARRAYREF_SLOW_ALLOC(block_strides);
+  const auto num_blocks_int = C10_AS_INTARRAYREF_SLOW_ALLOC(num_blocks);
   const auto distribution_kind = static_cast<PhiloxDistributionKind>(kind);
   TORCH_CHECK(
       distribution_kind == PhiloxDistributionKind::Normal ||
@@ -643,11 +650,11 @@ Tensor& _philox_distribution_flat_slice_cuda_(
             distribution_flat_slice<scalar_t>(
                 "_philox_distribution_flat_slice_",
                 self,
-                total_numel,
-                start_indices,
-                block_sizes,
-                block_strides,
-                num_blocks,
+                total_numel_int,
+                start_indices_int,
+                block_sizes_int,
+                block_strides_int,
+                num_blocks_int,
                 generator,
                 CurandNormalSampler<scalar_t>{},
                 param_func);
@@ -672,11 +679,11 @@ Tensor& _philox_distribution_flat_slice_cuda_(
             distribution_flat_slice<scalar_t>(
                 "_philox_distribution_flat_slice_",
                 self,
-                total_numel,
-                start_indices,
-                block_sizes,
-                block_strides,
-                num_blocks,
+                total_numel_int,
+                start_indices_int,
+                block_sizes_int,
+                block_strides_int,
+                num_blocks_int,
                 generator,
                 CurandUniformSampler<scalar_t>{},
                 param_func);
