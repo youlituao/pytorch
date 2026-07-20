@@ -2,8 +2,12 @@
 
 #include <c10/core/ConstantSymNodeImpl.h>
 #include <c10/core/SymInt.h>
+#include <c10/core/SymIntArrayRef.h>
 #include <c10/core/SymNodeImpl.h>
 #include <c10/macros/Macros.h>
+
+#include <string>
+#include <vector>
 
 using namespace c10;
 #ifndef C10_MOBILE
@@ -21,7 +25,41 @@ TEST(SymIntTest, ConcreteInts) {
 }
 
 TEST(SymIntTest, CheckRange) {
+  EXPECT_TRUE(SymInt::check_range(SymInt::min_representable_int()));
+  EXPECT_FALSE(SymInt::check_range(SymInt::min_representable_int() - 1));
   EXPECT_FALSE(SymInt::check_range(INT64_MIN));
+}
+
+TEST(SymIntTest, SymIntArrayRefErrorDistinguishesHeapAllocatedConcrete) {
+  const std::vector<SymInt> values{
+      SymInt(SymInt::min_representable_int() - 1), SymInt(5)};
+
+  try {
+    (void)c10::asIntArrayRefSlow(values, __FILE__, __LINE__);
+    FAIL() << "Expected asIntArrayRefSlow to reject heap-allocated SymInt";
+  } catch (const c10::Error& e) {
+    const std::string message = e.what_without_backtrace();
+    EXPECT_NE(
+        message.find("heap-allocated concrete SymInt at index 0"),
+        std::string::npos)
+        << message;
+    EXPECT_NE(
+        message.find("cannot represent heap-allocated SymInt values"),
+        std::string::npos)
+        << message;
+    EXPECT_EQ(message.find("Found symbolic SymInt"), std::string::npos)
+        << message;
+    EXPECT_EQ(message.find("symbolic shapes"), std::string::npos) << message;
+  }
+}
+
+TEST(SymIntTest, SymIntArrayRefAcceptsConcreteIntArrayRefBridge) {
+  const std::vector<int64_t> values{2, -1, SymInt::min_representable_int()};
+  const auto sym_values = c10::fromIntArrayRefSlow(values);
+  const auto int_values =
+      c10::asIntArrayRefSlow(sym_values, __FILE__, __LINE__);
+
+  EXPECT_EQ(int_values, at::IntArrayRef(values));
 }
 
 #if !C10_UBSAN_ENABLED
@@ -116,10 +154,25 @@ class ConstantIntPretendingToBeSymbolicSymNodeImpl
   }
 };
 
+class ThrowingEqSymNodeImpl
+    : public ConstantIntPretendingToBeSymbolicSymNodeImpl {
+ public:
+  using ConstantIntPretendingToBeSymbolicSymNodeImpl::
+      ConstantIntPretendingToBeSymbolicSymNodeImpl;
+
+  SymNode eq(const SymNode& other) override {
+    TORCH_CHECK(false, "sym_equals should have short-circuited before eq");
+  }
+};
+
 SymInt create_symbolic_symint(int64_t value) {
   return SymInt(
       SymNode(c10::make_intrusive<ConstantIntPretendingToBeSymbolicSymNodeImpl>(
           value)));
+}
+
+SymInt create_throwing_eq_symint(int64_t value) {
+  return SymInt(SymNode(c10::make_intrusive<ThrowingEqSymNodeImpl>(value)));
 }
 
 auto unwrap(const SymInt& x) {
@@ -142,6 +195,14 @@ void test_operator() {
 
 TEST(SymIntTest, BinaryPlus) {
   test_operator<std::plus>();
+}
+
+TEST(SymIntTest, SymEqualsShortCircuitsOnFirstKnownFalse) {
+  const std::vector<SymInt> lhs{SymInt(1), create_throwing_eq_symint(3)};
+  const std::vector<SymInt> rhs{SymInt(2), create_throwing_eq_symint(3)};
+
+  EXPECT_EQ(
+      c10::sym_equals(lhs, rhs).maybe_as_bool(), std::make_optional(false));
 }
 
 TEST(SymIntTest, BinaryMinus) {
