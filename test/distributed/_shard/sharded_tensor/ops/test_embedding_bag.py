@@ -5,11 +5,18 @@ import sys
 import torch
 import torch.distributed as dist
 from torch.distributed._shard import shard_parameter
+from torch.testing._internal.common_device_type import (
+    instantiate_device_type_tests,
+)
 from torch.testing._internal.common_distributed import (
     requires_accelerator_dist_backend,
     skip_if_lt_x_gpu,
 )
-from torch.testing._internal.common_utils import run_tests, TEST_WITH_DEV_DBG_ASAN
+from torch.testing._internal.common_utils import (
+    HardwareClassification,
+    run_tests,
+    TEST_WITH_DEV_DBG_ASAN,
+)
 from torch.testing._internal.distributed._shard.sharded_tensor import (
     ShardedTensorTestBase,
     TEST_GPU_NUM,
@@ -36,6 +43,8 @@ if TEST_WITH_DEV_DBG_ASAN:
 
 
 class TestShardedEmbeddingBag(ShardedTensorTestBase):
+    hw_classification = HardwareClassification.ACCELERATOR
+
     def _run_sharded_embedding_bag(
         self,
         spec,
@@ -88,11 +97,6 @@ class TestShardedEmbeddingBag(ShardedTensorTestBase):
 
         offsets = None
         if len(input_size) == 1:
-            # We need to generate certain length offset for each rank.
-            # The current implementation and dist API does not support
-            # the case when the offset has different lengths.
-            # input_size[0] >> offset_size, so the while loop will not
-            # for too long.
             while offsets is None or (offsets.size(0) != offset_size):
                 offsets = torch.randint(input_size[0], (offset_size,))
                 offsets[0] = 0
@@ -100,8 +104,6 @@ class TestShardedEmbeddingBag(ShardedTensorTestBase):
                     offsets[-1] = input_size[0]
                 offsets = torch.unique(offsets, sorted=True).contiguous().to(self.rank)
 
-        # If max_norm is set, we need to ensure that the renorm has been applied across
-        # inputs from all ranks.
         if max_norm is not None:
             gathered_inputs = [torch.zeros_like(inp) for _ in range(TEST_GPU_NUM)]
             dist.all_gather(gathered_inputs, inp)
@@ -115,15 +117,12 @@ class TestShardedEmbeddingBag(ShardedTensorTestBase):
             per_sample_weights=per_sample_weights,
         )
 
-        # Run local computation
         local_output = local_embedding_bag(
             inp,
             offsets=offsets,
             per_sample_weights=per_sample_weights,
         )
 
-        # Compare local weight and shared one to ensure the renorm
-        # as expected.
         if max_norm is not None:
             sharded_dim = spec.dim
             sharded_weight = sharded_embedding_bag.weight.local_shards()[0].tensor
@@ -135,10 +134,8 @@ class TestShardedEmbeddingBag(ShardedTensorTestBase):
             )
             self.assertEqual(local_weight_narrowed, sharded_weight)
 
-        # Verify
         self.assertEqual(local_output, sharded_output)
 
-        # Validate for torch.nn.functional.embedding_bag version.
         local_output = torch.nn.functional.embedding_bag(
             inp,
             local_embedding_bag.weight,
@@ -167,14 +164,14 @@ class TestShardedEmbeddingBag(ShardedTensorTestBase):
     @with_comms(init_rpc=False, backend=backend)
     @skip_if_lt_x_gpu(TEST_GPU_NUM)
     @requires_accelerator_dist_backend(["nccl", "xccl", "privateuse1"])
-    def test_sharded_embedding_bag_colwise(self):
+    def test_sharded_embedding_bag_colwise(self, device):
         for spec in generate_chunk_sharding_specs_for_test(1):
             self._test_sharded_embedding_bag_with_test_cases(spec, 1)
 
     @with_comms(init_rpc=False, backend=backend)
     @skip_if_lt_x_gpu(TEST_GPU_NUM)
     @requires_accelerator_dist_backend(["nccl", "xccl", "privateuse1"])
-    def test_sharded_embedding_bag_rowwise(self):
+    def test_sharded_embedding_bag_rowwise(self, device):
         for spec in generate_chunk_sharding_specs_for_test(0):
             self._test_sharded_embedding_bag_with_test_cases(spec, 0)
 
@@ -280,6 +277,9 @@ class TestShardedEmbeddingBag(ShardedTensorTestBase):
             max_norm=1.15,
             padding_idx=10,
         )
+
+
+instantiate_device_type_tests(TestShardedEmbeddingBag, globals())
 
 
 if __name__ == "__main__":
