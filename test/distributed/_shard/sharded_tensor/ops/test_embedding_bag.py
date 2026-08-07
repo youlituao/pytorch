@@ -5,9 +5,7 @@ import sys
 import torch
 import torch.distributed as dist
 from torch.distributed._shard import shard_parameter
-from torch.testing._internal.common_device_type import (
-    instantiate_device_type_tests,
-)
+from torch.testing._internal.common_device_type import instantiate_device_type_tests
 from torch.testing._internal.common_distributed import (
     requires_accelerator_dist_backend,
     skip_if_lt_x_gpu,
