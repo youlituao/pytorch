@@ -12,8 +12,9 @@ class SimpleMegatronLM(nn.Module):
         self.gelu = nn.GELU()
         self.fc2 = nn.Linear(*linear_size[1], dtype=dtype)
         if rank is not None:
-            self.fc1.to(torch.device(rank))
-            self.fc2.to(torch.device(rank))
+            device = torch.device(torch.accelerator.current_accelerator().type, rank)
+            self.fc1.to(device)
+            self.fc2.to(device)
 
     def forward(self, inp):
         return self.fc2(self.gelu(self.fc1(inp)))
