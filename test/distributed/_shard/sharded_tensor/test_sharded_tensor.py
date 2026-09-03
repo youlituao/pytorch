@@ -40,6 +40,7 @@ from torch.distributed._shard.sharding_spec import (
     ShardMetadata,
 )
 from torch.distributed.remote_device import _remote_device
+from torch.testing._internal.common_device_type import instantiate_device_type_tests
 from torch.testing._internal.common_distributed import (
     requires_nccl,
     skip_if_lt_x_gpu,
@@ -47,6 +48,7 @@ from torch.testing._internal.common_distributed import (
     tp_transports,
 )
 from torch.testing._internal.common_utils import (
+    HardwareClassification,
     run_tests,
     skip_but_pass_in_sandcastle_if,
     skipIfRocm,
@@ -73,6 +75,8 @@ if TEST_WITH_DEV_DBG_ASAN:
 
 
 class TestShardedTensorMetadata(TestCase):
+    hw_classification = HardwareClassification.GENERIC
+
     def test_serialize_and_deserialize(self):
         shard_metadatas = [
             ShardMetadata(
@@ -146,8 +150,10 @@ class TestShardedTensorMetadata(TestCase):
 
 
 class TestCreateTensorFromParams(TestCase):
+    hw_classification = HardwareClassification.ACCELERATOR
+
     @skip_but_pass_in_sandcastle_if(not TEST_CUDA, "CUDA GPU is needed")
-    def test_empty(self):
+    def test_empty(self, device):
         expected_dtype = torch.double
         tensor_properties = TensorProperties(
             dtype=expected_dtype,
@@ -167,10 +173,12 @@ class TestCreateTensorFromParams(TestCase):
 
 
 class TestShardParameter(ShardedTensorTestBase):
+    hw_classification = HardwareClassification.ACCELERATOR
+
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_shard_parameter(self):
+    def test_shard_parameter(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -199,7 +207,7 @@ class TestShardParameter(ShardedTensorTestBase):
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_shard_parameter_errors(self):
+    def test_shard_parameter_errors(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -259,10 +267,12 @@ class TestShardParameter(ShardedTensorTestBase):
 
 
 class TestShardTensor(ShardedTensorTestBase):
+    hw_classification = HardwareClassification.ACCELERATOR
+
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_shard_tensor(self):
+    def test_shard_tensor(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -285,7 +295,7 @@ class TestShardTensor(ShardedTensorTestBase):
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_shard_tensor_with_empty_shard(self):
+    def test_shard_tensor_with_empty_shard(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -316,7 +326,7 @@ class TestShardTensor(ShardedTensorTestBase):
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_shard_tensor_errors(self):
+    def test_shard_tensor_errors(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -366,6 +376,8 @@ class TestShardTensor(ShardedTensorTestBase):
 
 
 class TestModuleHookApi(ShardedTensorTestBase):
+    hw_classification = HardwareClassification.ACCELERATOR
+
     class DummyNNModule(torch.nn.Module):
         def __init__(self, spec, tensor_size):
             super().__init__()
@@ -377,7 +389,7 @@ class TestModuleHookApi(ShardedTensorTestBase):
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_reshard_output(self):
+    def test_reshard_output(self, device):
         specs = _chunk_sharding_specs_list_for_test([0, 1], seed=5)
         spec, reshard_spec = specs[0], specs[1]
         test_module = self.DummyNNModule(spec, [24, 12])
@@ -402,7 +414,7 @@ class TestModuleHookApi(ShardedTensorTestBase):
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_collect_local_shard(self):
+    def test_collect_local_shard(self, device):
         specs = _chunk_sharding_specs_list_for_test([0], seed=5)
         spec = specs[0]
         test_module = self.DummyNNModule(spec, [23, 15])
@@ -415,10 +427,12 @@ class TestModuleHookApi(ShardedTensorTestBase):
 
 
 class TestLocalTensor(ShardedTensorTestBase):
+    hw_classification = HardwareClassification.ACCELERATOR
+
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_local_tensor(self):
+    def test_local_tensor(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -436,7 +450,7 @@ class TestLocalTensor(ShardedTensorTestBase):
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_local_tensor_error(self):
+    def test_local_tensor_error(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -460,10 +474,12 @@ class TestLocalTensor(ShardedTensorTestBase):
 
 
 class TestShardedTensorChunked(ShardedTensorTestBase):
+    hw_classification = HardwareClassification.ACCELERATOR
+
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_sharded_tensor_metadata(self):
+    def test_sharded_tensor_metadata(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -513,7 +529,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_complete_world_size(self):
+    def test_complete_world_size(self, device):
         for dim in [0, -2]:
             spec = ChunkShardingSpec(
                 dim=dim,
@@ -572,7 +588,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_create_sharded_tensor_with_ones(self):
+    def test_create_sharded_tensor_with_ones(self, device):
         """Test sharded_tensor.ones(...)"""
 
         spec = ChunkShardingSpec(
@@ -600,7 +616,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_gather_even(self) -> None:
+    def test_gather_even(self, device) -> None:
         """Test _sharded_tensor.gather(...) with evenly distributed._shards"""
 
         spec = ChunkShardingSpec(
@@ -633,7 +649,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_gather_uneven(self) -> None:
+    def test_gather_uneven(self, device) -> None:
         """Test _sharded_tensor.gather(...) with unevenly distributed._shards"""
 
         spec = ChunkShardingSpec(
@@ -667,7 +683,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_create_sharded_tensor_with_zeros(self):
+    def test_create_sharded_tensor_with_zeros(self, device):
         """Test sharded_tensor.zeros(...)"""
 
         spec = ChunkShardingSpec(
@@ -695,7 +711,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_create_sharded_tensor_with_rand(self):
+    def test_create_sharded_tensor_with_rand(self, device):
         """Test sharded_tensor.rand(...)/randn(...)"""
 
         spec = ChunkShardingSpec(
@@ -746,7 +762,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_create_sharded_tensor_with_full(self):
+    def test_create_sharded_tensor_with_full(self, device):
         """Test sharded_tensor.full(...)"""
 
         spec = ChunkShardingSpec(
@@ -780,7 +796,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_create_sharded_tensor_like(self):
+    def test_create_sharded_tensor_like(self, device):
         """Test tensor like methods, i.e. torch.zeros_like(...), torch.full_like, etc."""
 
         spec = ChunkShardingSpec(
@@ -834,7 +850,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_partial_world_size(self):
+    def test_partial_world_size(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -888,7 +904,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_new_group(self):
+    def test_new_group(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -944,7 +960,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_multiple_local_shards(self):
+    def test_multiple_local_shards(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -994,8 +1010,8 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
 
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_sharding_columns(self):
-        self.init_pg()
+    def test_sharding_columns(self, device):
+        self.init_pg(backend=self.backend)
 
         for dim in [1, -1]:
             spec = ChunkShardingSpec(
@@ -1031,8 +1047,8 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
 
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_invalid_sharding(self):
-        self.init_pg()
+    def test_invalid_sharding(self, device):
+        self.init_pg(backend=self.backend)
 
         with self.assertRaisesRegex(
             NotImplementedError, "does not support named dimension"
@@ -1097,8 +1113,8 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
 
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_invalid_pg_rpc_ranks(self):
-        self.init_pg()
+    def test_invalid_pg_rpc_ranks(self, device):
+        self.init_pg(backend=self.backend)
 
         # Init RPC with different ranks.
         rpc_backend_options = rpc.TensorPipeRpcBackendOptions(
@@ -1121,8 +1137,8 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
 
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_insufficient_sharding_dims(self):
-        self.init_pg()
+    def test_insufficient_sharding_dims(self, device):
+        self.init_pg(backend=self.backend)
 
         spec = ChunkShardingSpec(
             dim=0,
@@ -1166,7 +1182,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_sharded_tensor_sizes(self):
+    def test_sharded_tensor_sizes(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -1221,7 +1237,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_state_dict(self):
+    def test_state_dict(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -1267,7 +1283,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_state_dict_new_group(self):
+    def test_state_dict_new_group(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -1308,7 +1324,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_state_dict_no_sharded_tensors(self):
+    def test_state_dict_no_sharded_tensors(self, device):
         # Verify hooks don't affect modules with no ShardedTensors.
         m = torch.nn.Linear(10, 10)
 
@@ -1333,11 +1349,11 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
 
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_load_state_dict_errors(self):
+    def test_load_state_dict_errors(self, device):
         self.init_rpc()
 
         dist.init_process_group(
-            backend="nccl",
+            backend=self.backend,
             world_size=self.world_size,
             rank=self.rank,
             init_method=f"file://{self.file_name}",
@@ -1388,7 +1404,7 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_cleanup(self):
+    def test_cleanup(self, device):
         def create_tensors():
             spec = ChunkShardingSpec(
                 dim=0,
@@ -1407,10 +1423,12 @@ class TestShardedTensorChunked(ShardedTensorTestBase):
 
 
 class TestShardedTensorEnumerable(ShardedTensorTestBase):
+    hw_classification = HardwareClassification.ACCELERATOR
+
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_sharded_tensor_metadata(self):
+    def test_sharded_tensor_metadata(self, device):
         spec = EnumerableShardingSpec(
             [
                 ShardMetadata(
@@ -1484,7 +1502,7 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_grid_sharding(self):
+    def test_grid_sharding(self, device):
         spec = EnumerableShardingSpec(
             [
                 ShardMetadata(
@@ -1554,7 +1572,7 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_create_sharded_tensor_with_ones(self):
+    def test_create_sharded_tensor_with_ones(self, device):
         """Test sharded_tensor.ones(...)"""
 
         spec = EnumerableShardingSpec(
@@ -1595,7 +1613,7 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_gather_even(self) -> None:
+    def test_gather_even(self, device) -> None:
         """Test _sharded_tensor.gather(...) with evenly distributed._shards"""
 
         spec = EnumerableShardingSpec(
@@ -1640,7 +1658,7 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_gather_uneven(self) -> None:
+    def test_gather_uneven(self, device) -> None:
         """Test _sharded_tensor.gather(...) with unevenly distributed._shards"""
 
         spec = EnumerableShardingSpec(
@@ -1685,7 +1703,7 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_sharded_tensor_to_cpu(self):
+    def test_sharded_tensor_to_cpu(self, device):
         cpu_spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -1772,7 +1790,7 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_sharded_tensor_to_cuda(self):
+    def test_sharded_tensor_to_cuda(self, device):
         cpu_spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -1828,7 +1846,7 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_sharded_tensor_to_test(self):
+    def test_sharded_tensor_to_test(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -1901,7 +1919,7 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_sharded_tensor_device(self):
+    def test_sharded_tensor_device(self, device):
         spec = ChunkShardingSpec(
             dim=0,
             placements=[
@@ -1925,8 +1943,8 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
 
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_uneven_shards(self):
-        self.init_pg()
+    def test_uneven_shards(self, device):
+        self.init_pg(backend=self.backend)
 
         spec = EnumerableShardingSpec(
             [
@@ -2002,7 +2020,7 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_partial_world_size(self):
+    def test_partial_world_size(self, device):
         spec = EnumerableShardingSpec(
             [
                 ShardMetadata(
@@ -2069,7 +2087,7 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_new_group(self):
+    def test_new_group(self, device):
         spec = EnumerableShardingSpec(
             [
                 ShardMetadata(
@@ -2138,7 +2156,7 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_multiple_local_shards(self):
+    def test_multiple_local_shards(self, device):
         spec = EnumerableShardingSpec(
             [
                 ShardMetadata(
@@ -2222,7 +2240,7 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_with_rpc_names(self):
+    def test_with_rpc_names(self, device):
         spec = EnumerableShardingSpec(
             [
                 ShardMetadata(
@@ -2291,6 +2309,8 @@ class TestShardedTensorEnumerable(ShardedTensorTestBase):
 
 
 class TestShardedTensorFromLocalTensor(ShardedTensorTestBase):
+    hw_classification = HardwareClassification.ACCELERATOR
+
     def _generate_st_from_chunk_local_tensor(self, st_size, sharding_spec):
         tensor_meta = sharding_spec.build_metadata(st_size, TensorProperties())
         pg = dist.distributed_c10d._get_default_group()
@@ -2357,7 +2377,7 @@ class TestShardedTensorFromLocalTensor(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_tensor(self):
+    def test_init_from_local_tensor(self, device):
         chunk_specs = _chunk_sharding_specs_list_for_test([0, 1, 1, 0], seed=31)
         for spec in chunk_specs:
             self._generate_st_from_chunk_local_tensor([20, 10], spec)
@@ -2368,7 +2388,7 @@ class TestShardedTensorFromLocalTensor(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_tensor_errors(self):
+    def test_init_from_local_tensor_errors(self, device):
         enumerable_sharding_spec = EnumerableShardingSpec(
             [
                 ShardMetadata(
@@ -2403,10 +2423,12 @@ class TestShardedTensorFromLocalTensor(ShardedTensorTestBase):
 
 
 class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
+    hw_classification = HardwareClassification.ACCELERATOR
+
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_local_shards(self):
+    def test_local_shards(self, device):
         shard_offsets = [(self.rank // 2) * 5, (self.rank % 2) * 5]
         local_shard_metadata = ShardMetadata(
             shard_offsets=shard_offsets,
@@ -2433,7 +2455,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_shards(self):
+    def test_init_from_local_shards(self, device):
         local_shard_metadata = ShardMetadata(
             shard_offsets=[(self.rank // 2) * 5, (self.rank % 2) * 5],
             shard_sizes=[5, 5],
@@ -2492,7 +2514,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_recalc_for_metadata(self):
+    def test_recalc_for_metadata(self, device):
         shard_sizes = [0, 5]  # test 2 different shard sizes
         for shard_size in shard_sizes:
             local_shard_metadata = ShardMetadata(
@@ -2547,7 +2569,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_shards_with_different_glb_size(self):
+    def test_init_from_local_shards_with_different_glb_size(self, device):
         wrong_offset_local_shard_metadata = ShardMetadata(
             shard_offsets=[0, 0],
             shard_sizes=[5, 5],
@@ -2581,7 +2603,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_non_rw_sharded_recalc_for_metadata(self):
+    def test_non_rw_sharded_recalc_for_metadata(self, device):
         local_shard_metadata = ShardMetadata(
             shard_offsets=[(self.rank // 2) * 5, (self.rank % 2) * 5],
             shard_sizes=[5, 5],
@@ -2613,7 +2635,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
         )
 
     @skip_if_lt_x_gpu(4)
-    def test_st_base_init_from_local_shards_and_global_metadata(self):
+    def test_st_base_init_from_local_shards_and_global_metadata(self, device):
         world_size = 4
         shards_metadata = []
         shards = []
@@ -2676,7 +2698,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_shards_and_global_metadata_with_all_zeros(self):
+    def test_init_from_local_shards_and_global_metadata_with_all_zeros(self, device):
         local_shard_metadata = ShardMetadata(
             shard_offsets=[0, 0],
             shard_sizes=[0, 0],
@@ -2751,7 +2773,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms(init_rpc=False)
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_shards_and_global_metadata_with_local_view(self):
+    def test_init_from_local_shards_and_global_metadata_with_local_view(self, device):
         # testing cases where we create ST with local view, meaning we initialize other rank's metadata with 0s
         shard_offsets = [0, 1]  # valid, invalid
         for shard_offset in shard_offsets:
@@ -2848,7 +2870,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_shards_and_global_metadata(self):
+    def test_init_from_local_shards_and_global_metadata(self, device):
         local_shard_metadata = ShardMetadata(
             shard_offsets=[(self.rank // 2) * 5, (self.rank % 2) * 5],
             shard_sizes=[5, 5],
@@ -2935,7 +2957,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_shards_new_group(self):
+    def test_init_from_local_shards_new_group(self, device):
         new_pg = dist.new_group(ranks=[1, 2, 3])
 
         if self.rank != 0:
@@ -2985,7 +3007,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_shards_invalid_local_shards(self):
+    def test_init_from_local_shards_invalid_local_shards(self, device):
         local_shard_metadata = ShardMetadata(
             shard_offsets=[(self.rank // 2) * 5, (self.rank % 2) * 5],
             shard_sizes=[5, 5],
@@ -3040,7 +3062,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_shards_invalid_property_cross_ranks(self):
+    def test_init_from_local_shards_invalid_property_cross_ranks(self, device):
         local_shard_metadata = ShardMetadata(
             shard_offsets=[(self.rank // 2) * 5, (self.rank % 2) * 5],
             shard_sizes=[5, 5],
@@ -3100,7 +3122,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
 
     @with_comms(init_rpc=False, backend="gloo")
     @skip_if_lt_x_gpu(4)
-    def test_init_from_local_shards_invalid_pin_memory(self):
+    def test_init_from_local_shards_invalid_pin_memory(self, device):
         # pin memory can only be on dense cpu
         local_shard_metadata = ShardMetadata(
             shard_offsets=[(self.rank // 2) * 5, (self.rank % 2) * 5],
@@ -3139,7 +3161,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_shards_invalid_shards_overlap(self):
+    def test_init_from_local_shards_invalid_shards_overlap(self, device):
         local_shard_size = [5, 5] if self.rank != 0 else [6, 6]
         local_shard_metadata = ShardMetadata(
             shard_offsets=[(self.rank // 2) * 5, (self.rank % 2) * 5],
@@ -3162,7 +3184,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_shards_invalid_shards_gaps(self):
+    def test_init_from_local_shards_invalid_shards_gaps(self, device):
         local_shard_size = [5, 5] if self.rank != 0 else [4, 4]
         local_shard_metadata = ShardMetadata(
             shard_offsets=[(self.rank // 2) * 5, (self.rank % 2) * 5],
@@ -3185,7 +3207,7 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_init_from_local_shards_and_global_metadata_invalid_shards(self):
+    def test_init_from_local_shards_and_global_metadata_invalid_shards(self, device):
         local_shard_metadata = ShardMetadata(
             shard_offsets=[(self.rank // 2) * 5, (self.rank % 2) * 5],
             shard_sizes=[5, 5],
@@ -3326,10 +3348,12 @@ class TestShardedTensorFromLocalShards(ShardedTensorTestBase):
 
 
 class TestShardedTensorCustomOps(ShardedTensorTestBase):
+    hw_classification = HardwareClassification.ACCELERATOR
+
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_custom_op(self):
+    def test_custom_op(self, device):
         @custom_sharded_op_impl(torch.asin)
         def my_sharded_asin(types, args, kwargs, process_group):
             return torch.asin(args[0].local_shards()[0].tensor)
@@ -3351,7 +3375,7 @@ class TestShardedTensorCustomOps(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_custom_op_override(self):
+    def test_custom_op_override(self, device):
         t = torch.rand(10, 10).cuda(self.rank)
 
         from torch.distributed._shard.sharding_spec.api import custom_sharding_spec_op
@@ -3378,7 +3402,7 @@ class TestShardedTensorCustomOps(ShardedTensorTestBase):
     @with_comms
     @skip_if_lt_x_gpu(4)
     @requires_nccl()
-    def test_custom_op_errors(self):
+    def test_custom_op_errors(self, device):
         with self.assertRaisesRegex(TypeError, "expects signature"):
 
             @custom_sharded_op_impl(torch.nn.functional.linear)
@@ -3393,9 +3417,11 @@ class TestShardedTensorCustomOps(ShardedTensorTestBase):
 
 
 class TestShardMetadata(ShardedTensorTestBase):
+    hw_classification = HardwareClassification.ACCELERATOR
+
     @with_comms
     @requires_nccl()
-    def test_shard_metadata_init(self):
+    def test_shard_metadata_init(self, device):
         pg = dist.distributed_c10d._get_default_group()
 
         md = ShardMetadata([10], [0])
@@ -3412,13 +3438,15 @@ class TestShardMetadata(ShardedTensorTestBase):
 
     @with_comms
     @requires_nccl()
-    def test_create_shard_with_no_placement(self):
+    def test_create_shard_with_no_placement(self, device):
         md = ShardMetadata([0], [10])
         shard = Shard(torch.zeros(10), md)
         self.assertIsNone(shard.metadata.placement)
 
 
 class TestShardedTensorSubGroupInit(TestCase):
+    hw_classification = HardwareClassification.GENERIC
+
     @spawn_threads_and_init_comms(world_size=4)
     def test_sub_process_group_sharded_tensor_init(self):
         world_pg = dist.GroupMember.WORLD
@@ -3470,6 +3498,8 @@ class TestShardedTensorSubGroupInit(TestCase):
 
 
 class TestCreateTensorNoProcessGroupMode(TestCase):
+    hw_classification = HardwareClassification.GENERIC
+
     def test_init_from_local_shards_and_global_metadata(self):
         st_metadata: ShardedTensorMetadata = ShardedTensorMetadata(
             shards_metadata=[
@@ -3530,6 +3560,23 @@ class TestCreateTensorNoProcessGroupMode(TestCase):
             local_shards=st_local_shards,
             sharded_tensor_metadata=st_metadata,
         )
+
+
+instantiate_device_type_tests(TestCreateTensorFromParams, globals(), except_for="cpu")
+instantiate_device_type_tests(TestShardParameter, globals(), except_for="cpu")
+instantiate_device_type_tests(TestShardTensor, globals(), except_for="cpu")
+instantiate_device_type_tests(TestModuleHookApi, globals(), except_for="cpu")
+instantiate_device_type_tests(TestLocalTensor, globals(), except_for="cpu")
+instantiate_device_type_tests(TestShardedTensorChunked, globals(), except_for="cpu")
+instantiate_device_type_tests(TestShardedTensorEnumerable, globals(), except_for="cpu")
+instantiate_device_type_tests(
+    TestShardedTensorFromLocalTensor, globals(), except_for="cpu"
+)
+instantiate_device_type_tests(
+    TestShardedTensorFromLocalShards, globals(), except_for="cpu"
+)
+instantiate_device_type_tests(TestShardedTensorCustomOps, globals(), except_for="cpu")
+instantiate_device_type_tests(TestShardMetadata, globals(), except_for="cpu")
 
 
 if __name__ == "__main__":
